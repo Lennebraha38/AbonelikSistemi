@@ -38,7 +38,6 @@
         <!-- flutter_background_service arka plan servisi kaydı -->
         <service
             android:name="id.flutter.flutter_background_service.BackgroundService"
-            android:exported="false"
             android:foregroundServiceType="dataSync" />
     </application>
 </manifest>

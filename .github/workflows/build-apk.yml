@@ -111,7 +111,9 @@ jobs:
 
       - name: Build release APK
         continue-on-error: true
-        run: flutter build apk --release 2>&1 | tee build.log
+        run: |
+          set -o pipefail
+          flutter build apk --release 2>&1 | tee build.log
 
       - name: Emit build errors as annotations
         run: |
