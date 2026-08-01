@@ -75,7 +75,7 @@ jobs:
       - name: Emit build errors as annotations
         run: |
           if [ -s build.log ]; then
-            grep -iE "what went wrong|execution failed|BUILD FAILED|FAILURE:|error:|caused by|exception|unsatisfied|unable to" build.log | tail -25 | while IFS= read -r line; do
+            grep -B1 -A25 "What went wrong" build.log | tail -30 | while IFS= read -r line; do
               echo "::error file=build.log::$line"
             done
           fi
