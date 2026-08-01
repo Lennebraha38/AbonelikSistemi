@@ -109,6 +109,18 @@ jobs:
             done
           fi
 
+      - name: Run tests
+        continue-on-error: true
+        run: flutter test 2>&1 | tee test.log
+
+      - name: Emit test errors as annotations
+        run: |
+          if [ -s test.log ]; then
+            grep -E "\[E\]" test.log | head -30 | while IFS= read -r line; do
+              echo "::error file=test.log::$line"
+            done
+          fi
+
       - name: Build release APK
         continue-on-error: true
         run: |

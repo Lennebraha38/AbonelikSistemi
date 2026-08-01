@@ -3,11 +3,16 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../database/app_database.dart';
+import '../models/categories.dart';
 import '../models/subscription.dart';
 
-/// Yeni abonelik ekleme formu.
+/// Yeni abonelik ekleme / mevcut aboneliği düzenleme formu.
 class AddSubscriptionScreen extends StatefulWidget {
-  const AddSubscriptionScreen({super.key});
+  /// Doluysa bu aboneliğin değerleriyle form doldurulur ve kayıt güncellenir;
+  /// boşsa yeni abonelik eklenir.
+  final Subscription? subscription;
+
+  const AddSubscriptionScreen({super.key, this.subscription});
 
   @override
   State<AddSubscriptionScreen> createState() => _AddSubscriptionScreenState();
@@ -18,18 +23,49 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
   final _nameController = TextEditingController();
   final _priceController = TextEditingController();
 
-  String _currency = 'TRY';
-  String _billingCycle = 'monthly';
-  DateTime _startDate = DateTime.now();
+  late String _currency;
+  late String _billingCycle;
+  late DateTime _startDate;
+  late String _category;
+  late bool _hasTrial;
+  late DateTime _trialEndDate;
+  late int _reminderDays;
   bool _saving = false;
+
+  bool get _isEditing => widget.subscription != null;
 
   @override
   void initState() {
     super.initState();
+    _prefill();
     _loadPreferredCurrency();
   }
 
+  void _prefill() {
+    final s = widget.subscription;
+    if (s == null) {
+      _currency = 'TRY';
+      _billingCycle = 'monthly';
+      _startDate = DateTime.now();
+      _category = 'other';
+      _hasTrial = false;
+      _trialEndDate = DateTime.now().add(const Duration(days: 7));
+      _reminderDays = Subscription.defaultReminderDays;
+      return;
+    }
+    _nameController.text = s.name;
+    _priceController.text = s.price.toString();
+    _currency = s.currency;
+    _billingCycle = s.billingCycle;
+    _startDate = s.startDate;
+    _category = s.category;
+    _hasTrial = s.trialEndDate != null;
+    _trialEndDate = s.trialEndDate ?? DateTime.now().add(const Duration(days: 7));
+    _reminderDays = s.reminderDays;
+  }
+
   Future<void> _loadPreferredCurrency() async {
+    if (_isEditing) return;
     final prefs = await SharedPreferences.getInstance();
     final preferred = prefs.getString('display_currency');
     if (preferred != null && mounted) {
@@ -44,14 +80,17 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
     super.dispose();
   }
 
-  Future<void> _pickStartDate() async {
+  Future<void> _pickDate(
+    DateTime current,
+    void Function(DateTime) onPicked,
+  ) async {
     final picked = await showDatePicker(
       context: context,
-      initialDate: _startDate,
+      initialDate: current,
       firstDate: DateTime(2000),
       lastDate: DateTime.now().add(const Duration(days: 3650)),
     );
-    if (picked != null) setState(() => _startDate = picked);
+    if (picked != null) onPicked(picked);
   }
 
   Future<void> _save() async {
@@ -60,16 +99,27 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
     final price =
         double.parse(_priceController.text.trim().replaceAll(',', '.'));
 
+    final existing = widget.subscription;
     final subscription = Subscription(
+      id: existing?.id,
       name: _nameController.text.trim(),
       price: price,
       currency: _currency,
       billingCycle: _billingCycle,
       startDate: _startDate,
+      category: _category,
+      trialEndDate: _hasTrial ? _trialEndDate : null,
+      reminderDays: _reminderDays,
+      status: existing?.status ?? Subscription.active,
+      lastNotifiedDate: existing?.lastNotifiedDate,
     );
 
     setState(() => _saving = true);
-    await AppDatabase.instance.insertSubscription(subscription);
+    if (_isEditing) {
+      await AppDatabase.instance.updateSubscription(subscription);
+    } else {
+      await AppDatabase.instance.insertSubscription(subscription);
+    }
     if (!mounted) return;
     Navigator.of(context).pop(true);
   }
@@ -79,7 +129,9 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
     final currencySymbol = CurrencyConverter.symbols[_currency] ?? '';
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Abonelik Ekle')),
+      appBar: AppBar(
+        title: Text(_isEditing ? 'Aboneliği Düzenle' : 'Abonelik Ekle'),
+      ),
       body: Form(
         key: _formKey,
         child: ListView(
@@ -176,6 +228,35 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
             const SizedBox(height: 16),
             InputDecorator(
               decoration: const InputDecoration(
+                labelText: 'Kategori',
+                border: OutlineInputBorder(),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              ),
+              child: DropdownButton<String>(
+                value: _category,
+                isExpanded: true,
+                underline: const SizedBox.shrink(),
+                items: CategoryCatalog.all.map((c) {
+                  return DropdownMenuItem(
+                    value: c.key,
+                    child: Row(
+                      children: [
+                        Icon(c.icon, color: c.color, size: 20),
+                        const SizedBox(width: 8),
+                        Text(c.label),
+                      ],
+                    ),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  if (value != null) setState(() => _category = value);
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            InputDecorator(
+              decoration: const InputDecoration(
                 labelText: 'İlk Ödeme Tarihi',
                 border: OutlineInputBorder(),
                 contentPadding:
@@ -185,14 +266,72 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                 contentPadding: EdgeInsets.zero,
                 title: Text(DateFormat('dd.MM.yyyy').format(_startDate)),
                 trailing: const Icon(Icons.calendar_month_outlined),
-                onTap: _pickStartDate,
+                onTap: () => _pickDate(_startDate, (d) {
+                  setState(() => _startDate = d);
+                }),
               ),
             ),
+            const SizedBox(height: 16),
+            InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Hatırlatma (yenilemeden kaç gün önce)',
+                border: OutlineInputBorder(),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              ),
+              child: DropdownButton<int>(
+                value: _reminderDays,
+                isExpanded: true,
+                underline: const SizedBox.shrink(),
+                items: const [
+                  DropdownMenuItem(value: 1, child: Text('1 gün önce')),
+                  DropdownMenuItem(value: 3, child: Text('3 gün önce')),
+                  DropdownMenuItem(value: 7, child: Text('7 gün önce')),
+                ],
+                onChanged: (value) {
+                  if (value != null) setState(() => _reminderDays = value);
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            SwitchListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+              title: const Text('Deneme süresi var'),
+              subtitle: Text(
+                'Deneme bitince ücretliye geçmeden önce uyarır',
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+              ),
+              value: _hasTrial,
+              onChanged: (value) => setState(() => _hasTrial = value),
+            ),
+            if (_hasTrial) ...[
+              const SizedBox(height: 8),
+              InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Deneme Bitiş Tarihi',
+                  border: OutlineInputBorder(),
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                ),
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    DateFormat('dd.MM.yyyy').format(_trialEndDate),
+                  ),
+                  trailing: const Icon(Icons.timelapse_outlined),
+                  onTap: () => _pickDate(_trialEndDate, (d) {
+                    setState(() => _trialEndDate = d);
+                  }),
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: _saving ? null : _save,
-              icon: const Icon(Icons.save_outlined),
-              label: const Text('Kaydet'),
+              icon: Icon(
+                _isEditing ? Icons.update : Icons.save_outlined,
+              ),
+              label: Text(_isEditing ? 'Güncelle' : 'Kaydet'),
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -10,6 +11,14 @@ class AppDatabase {
 
   static final AppDatabase instance = AppDatabase._();
 
+  /// Şema sürümü. Değişiklik yapıldığında bir üst sayıya çekilir ve
+  /// [onUpgrade] içine eski sürümden gelen migration'lar eklenir.
+  static const int schemaVersion = 3;
+
+  /// Testlerde normal dosya yolunu geçersiz kılar (örn. `:memory:`).
+  @visibleForTesting
+  static String? overrideDatabasePath;
+
   Database? _db;
 
   Future<Database> get database async {
@@ -17,11 +26,18 @@ class AppDatabase {
     return _db!;
   }
 
+  /// Test sonrası veritabanını kapatıp sıfırlar.
+  @visibleForTesting
+  Future<void> resetForTesting() async {
+    await _db?.close();
+    _db = null;
+  }
+
   Future<Database> _initDb() async {
     final dbPath = await getDatabasesPath();
     return openDatabase(
-      join(dbPath, 'subscriptions.db'),
-      version: 1,
+      overrideDatabasePath ?? join(dbPath, 'subscriptions.db'),
+      version: schemaVersion,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE subscriptions (
@@ -31,9 +47,31 @@ class AppDatabase {
             currency TEXT NOT NULL,
             billing_cycle TEXT NOT NULL,
             start_date TEXT NOT NULL,
-            last_notified_date TEXT
+            last_notified_date TEXT,
+            status TEXT NOT NULL DEFAULT 'active',
+            category TEXT NOT NULL DEFAULT 'other',
+            trial_end_date TEXT,
+            reminder_days INTEGER NOT NULL DEFAULT 3
           )
         ''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute(
+            "ALTER TABLE subscriptions ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
+          );
+        }
+        if (oldVersion < 3) {
+          await db.execute(
+            "ALTER TABLE subscriptions ADD COLUMN category TEXT NOT NULL DEFAULT 'other'",
+          );
+          await db.execute(
+            'ALTER TABLE subscriptions ADD COLUMN trial_end_date TEXT',
+          );
+          await db.execute(
+            'ALTER TABLE subscriptions ADD COLUMN reminder_days INTEGER NOT NULL DEFAULT 3',
+          );
+        }
       },
     );
   }
@@ -48,6 +86,10 @@ class AppDatabase {
       'currency': subscription.currency,
       'billing_cycle': subscription.billingCycle,
       'start_date': subscription.startDate.toIso8601String(),
+      'status': subscription.status,
+      'category': subscription.category,
+      'trial_end_date': subscription.trialEndDate?.toIso8601String(),
+      'reminder_days': subscription.reminderDays,
     });
   }
 
@@ -59,19 +101,25 @@ class AppDatabase {
     return rows.map(Subscription.fromMap).toList();
   }
 
-  /// Yenilenmesine [withinDays] gün veya daha az kalmış abonelikler,
-  /// yenileme tarihine göre sıralı.
-  Future<List<Subscription>> getUpcomingRenewals(int withinDays) async {
+  /// Sadece aktif (iptal edilmemiş) abonelikler.
+  Future<List<Subscription>> getActiveSubscriptions() async {
     final subscriptions = await getSubscriptions();
+    return subscriptions.where((s) => !s.isCancelled).toList();
+  }
+
+  /// Yenilenmesine [withinDays] gün veya daha az kalmış **aktif**
+  /// abonelikler, yenileme tarihine göre sıralı.
+  Future<List<Subscription>> getUpcomingRenewals(int withinDays) async {
+    final subscriptions = await getActiveSubscriptions();
     return subscriptions
         .where((s) => s.daysUntilRenewal <= withinDays)
         .toList()
       ..sort((a, b) => a.daysUntilRenewal.compareTo(b.daysUntilRenewal));
   }
 
-  /// Her para birimi için aylık baza indirgenmiş toplam.
+  /// Her para birimi için aylık baza indirgenmiş toplam (sadece aktif olanlar).
   Future<Map<String, double>> getMonthlyTotalByCurrency() async {
-    final subscriptions = await getSubscriptions();
+    final subscriptions = await getActiveSubscriptions();
     final totals = <String, double>{};
     for (final s in subscriptions) {
       totals[s.currency] = (totals[s.currency] ?? 0) + s.monthlyEquivalent;
@@ -108,6 +156,28 @@ class AppDatabase {
     await db.update(
       'subscriptions',
       {'last_notified_date': date.toIso8601String()},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Aboneliği iptal eder: toplam gider ve bildirimlere dahil edilmez.
+  Future<void> cancelSubscription(int id) async {
+    final db = await database;
+    await db.update(
+      'subscriptions',
+      {'status': Subscription.cancelled},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// İptal edilmiş aboneliği tekrar aktif eder.
+  Future<void> reactivateSubscription(int id) async {
+    final db = await database;
+    await db.update(
+      'subscriptions',
+      {'status': Subscription.active},
       where: 'id = ?',
       whereArgs: [id],
     );

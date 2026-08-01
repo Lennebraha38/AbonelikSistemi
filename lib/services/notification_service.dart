@@ -18,6 +18,7 @@ import '../models/subscription.dart';
 class NotificationService {
   static const int foregroundNotificationId = 999;
   static const int renewalNotificationBaseId = 1000;
+  static const int trialNotificationBaseId = 2000;
 
   static final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
@@ -152,7 +153,8 @@ class NotificationService {
 
   /// Sabah [alertHour] (varsayılan 09:00) saatinden sonra günde yalnızca
   /// bir kez çalışır; yenilenmesine 3 gün veya daha az kalmış abonelikler
-  /// için bildirim gönderir.
+  /// ve bitmesine 3 gün veya daha az kalan deneme süreleri için bildirim
+  /// gönderir.
   static Future<void> performDailyCheck() async {
     final prefs = await SharedPreferences.getInstance();
     if (!(prefs.getBool('notifications_enabled') ?? true)) return;
@@ -179,9 +181,59 @@ class NotificationService {
       await AppDatabase.instance
           .updateLastNotifiedDate(subscription.id!, now);
     }
+
+    await _checkTrialAlerts(now);
+  }
+
+  /// Bitmesine 3 gün veya daha az kalmış, aktif deneme süreleri için
+  /// günde bir kez bildirim gönderir.
+  static Future<void> _checkTrialAlerts(DateTime now) async {
+    final prefs = await SharedPreferences.getInstance();
+    final active = await AppDatabase.instance.getActiveSubscriptions();
+    final dueTrials = active.where((s) {
+      if (s.trialEndDate == null) return false;
+      final days = s.daysUntilTrialEnd;
+      return days >= 0 && days <= 3;
+    });
+
+    for (final subscription in dueTrials) {
+      final key = 'trial_notified_${subscription.id!}_'
+          '${now.year}-${now.month}-${now.day}';
+      if (prefs.getBool(key) ?? false) continue;
+
+      await showTrialEndAlert(subscription);
+      await prefs.setBool(key, true);
+    }
   }
 
   // ---------- Bildirim gösterimi ----------
+
+  static Future<void> showTrialEndAlert(Subscription subscription) async {
+    final days = subscription.daysUntilTrialEnd;
+    final when = days == 0
+        ? 'bugün'
+        : days == 1
+            ? 'yarın'
+            : '$days gün sonra';
+
+    await _notifications.show(
+      trialNotificationBaseId + (subscription.id ?? 0),
+      'Deneme Süresi Uyarısı',
+      'Dikkat: ${subscription.name} deneme süresi $when sona eriyor! '
+          'İptal etmezseniz ücretlendirilir.',
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'renewal_alerts',
+          'Yenileme Uyarıları',
+          channelDescription: 'Yaklaşan abonelik yenileme bildirimleri',
+          importance: Importance.high,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+        ),
+        iOS: DarwinNotificationDetails(),
+      ),
+    );
+  }
 
   static Future<void> showRenewalAlert(Subscription subscription) async {
     final symbol = CurrencyConverter.symbols[subscription.currency] ?? '';

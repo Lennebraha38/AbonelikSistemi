@@ -3,6 +3,13 @@
 /// Sadece ilk ödeme tarihi (`startDate`) ve fatura döngüsü bilgisi saklanır;
 /// bir sonraki yenileme tarihi ve aylık eşdeğer maliyet buradan türetilir.
 class Subscription {
+  /// Durum değerleri: 'active' (devam eden) veya 'cancelled' (iptal edilmiş).
+  static const String active = 'active';
+  static const String cancelled = 'cancelled';
+
+  /// Varsayılan hatırlatma günü: yenilemeden kaç gün önce uyarılmalı.
+  static const int defaultReminderDays = 3;
+
   final int? id;
   final String name;
   final double price;
@@ -10,6 +17,10 @@ class Subscription {
   final String billingCycle; // monthly | yearly
   final DateTime startDate; // ilk ödeme tarihi
   final DateTime? lastNotifiedDate; // son bildirim gönderilen gün
+  final String status; // active | cancelled
+  final String category; // kategori anahtarı (bkz. CategoryCatalog)
+  final DateTime? trialEndDate; // deneme süresinin bittiği gün (varsa)
+  final int reminderDays; // yenilemeden kaç gün önce uyarı (1/3/7)
 
   const Subscription({
     this.id,
@@ -19,7 +30,13 @@ class Subscription {
     required this.billingCycle,
     required this.startDate,
     this.lastNotifiedDate,
+    this.status = active,
+    this.category = 'other',
+    this.trialEndDate,
+    this.reminderDays = defaultReminderDays,
   });
+
+  bool get isCancelled => status == cancelled;
 
   static DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
@@ -55,6 +72,23 @@ class Subscription {
   double get monthlyEquivalent =>
       billingCycle == 'monthly' ? price : price / 12;
 
+  /// Yıllık baza indirgenmiş maliyet.
+  double get yearlyEquivalent => monthlyEquivalent * 12;
+
+  /// Aktif bir deneme süresi var mı? (trialEndDate bugün veya ileride)
+  bool get isOnTrial {
+    final end = trialEndDate;
+    if (end == null) return false;
+    return !_dateOnly(end).isBefore(_dateOnly(DateTime.now()));
+  }
+
+  /// Deneme süresinin bitmesine kalan gün sayısı (negatifse çoktan bitmiş).
+  int get daysUntilTrialEnd {
+    final end = trialEndDate;
+    if (end == null) return 0;
+    return _dateOnly(end).difference(_dateOnly(DateTime.now())).inDays;
+  }
+
   Map<String, dynamic> toMap() => {
         'id': id,
         'name': name,
@@ -63,6 +97,10 @@ class Subscription {
         'billing_cycle': billingCycle,
         'start_date': startDate.toIso8601String(),
         'last_notified_date': lastNotifiedDate?.toIso8601String(),
+        'status': status,
+        'category': category,
+        'trial_end_date': trialEndDate?.toIso8601String(),
+        'reminder_days': reminderDays,
       };
 
   factory Subscription.fromMap(Map<String, dynamic> map) => Subscription(
@@ -75,6 +113,12 @@ class Subscription {
         lastNotifiedDate: map['last_notified_date'] == null
             ? null
             : DateTime.parse(map['last_notified_date'] as String),
+        status: (map['status'] as String?) ?? active,
+        category: (map['category'] as String?) ?? 'other',
+        trialEndDate: map['trial_end_date'] == null
+            ? null
+            : DateTime.parse(map['trial_end_date'] as String),
+        reminderDays: (map['reminder_days'] as int?) ?? defaultReminderDays,
       );
 }
 

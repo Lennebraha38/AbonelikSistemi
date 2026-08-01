@@ -8,10 +8,18 @@ kalan abonelikler için **sabah 09:00**'da yerel bildirim gönderir.
 ## Özellikler
 
 - **Dashboard**: En üstte büyük puntolarla "Aylık Toplam Gider", altında
-  tarihe göre sıralı yaklaşan ödemeler.
-- **Abonelik Ekle**: Uygulama adı, fiyat, para birimi (TRY/USD/EUR),
-  fatura döngüsü (aylık/yıllık), ilk ödeme tarihi.
-- **Ayarlar**: Görüntüleme para birimi, bildirim aç/kapa, bildirim saati.
+  tarihe göre sıralı yaklaşan ödemeler; kategoriye göre filtreleme; iptal,
+  iptali geri alma, silme ve **düzenleme** menüsü.
+- **Abonelik Ekle / Düzenle**: Uygulama adı, fiyat, para birimi (TRY/USD/EUR),
+  fatura döngüsü (aylık/yıllık), kategori, ilk ödeme tarihi, hatırlatma günü
+  (1/3/7) ve opsiyonel deneme süresi.
+- **İstatistikler**: Aylık/yıllık toplam, önümüzdeki 7 gündeki ödemeler,
+  kategoriye göre donut grafik ve en pahalı abonelikler.
+- **Ayarlar**: Açık/koyu/sistem teması, görüntüleme para birimi, bildirim
+  aç/kapa, bildirim saati ve **CSV dışa aktarma** (yedek/paylaşım).
+- **Bildirimler**: Yenilenmesine 3 gün veya daha az kalan abonelikler için
+  günlük uyarı + **bitmesine 3 gün veya daha az kalan deneme süreleri** için
+  uyarı (varsayılan 09:00, ayarlanabilir).
 - **Veritabanı**: SQLite (sqflite) — tüm veriler cihazda, internet gerektirmez.
 - **Arka plan**: flutter_background_service ile uygulama kapalıyken de
   periyodik kontrol; flutter_local_notifications ile bildirim.
@@ -58,6 +66,22 @@ kalan abonelikler için **sabah 09:00**'da yerel bildirim gönderir.
    - Her biri için "Dikkat: [Abonelik] yenilemesine az kaldı!" bildirimini
      atar ve aynı gün tekrar bildirim atmamak için `last_notified_date`
      kolonunu günceller.
+   - Bitmesine **3 gün veya daha az** kalan aktif deneme süreleri için
+     "Deneme Süresi Uyarısı" bildirimi atar (günde bir kez, ayrı anahtarla
+     takip edilir).
+
+## Testler
+
+Model, döviz çevirimi ve veritabanı CRUD mantığı `test/` altında birim
+testleriyle doğrulanır. Veritabanı testleri `sqflite_common_ffi` ile
+masaüstünde çalışır; cihaz/emülatör gerekmez.
+
+```bash
+flutter test
+```
+
+CI (`.github/workflows/build-apk.yml`) `flutter analyze` ve `flutter test`
+adımlarını çalıştırır; hatalar GitHub Actions'da annotation olarak görünür.
 
 ## Yayınlama (APK indirme)
 
@@ -89,16 +113,21 @@ APK derleyip indirilebilir hale getirir (yerel Flutter/Android SDK gerekmez):
 
 ```
 lib/
-├── main.dart                  → uygulama girişi, servis kurulumu
+├── main.dart                  → uygulama girişi, tema + servis kurulumu
 ├── models/
-│   └── subscription.dart      → Subscription modeli + CurrencyConverter
+│   ├── subscription.dart      → Subscription modeli + CurrencyConverter
+│   └── categories.dart        → kategori kataloğu (ad, simge, renk)
 ├── database/
 │   └── app_database.dart      → SQLite CRUD + aylık toplam hesapları
 ├── services/
-│   └── notification_service.dart → yerel bildirimler + arka plan servisi
+│   ├── notification_service.dart → yerel bildirimler + arka plan servisi
+│   └── export_service.dart    → CSV dışa aktarma + paylaşım
+├── theme/
+│   └── theme_controller.dart  → açık/koyu/sistem teması yönetimi
 └── screens/
     ├── dashboard_screen.dart
-    ├── add_subscription_screen.dart
+    ├── add_subscription_screen.dart  → ekle + düzenleme
+    ├── insights_screen.dart
     └── settings_screen.dart
 ```
 
@@ -107,8 +136,11 @@ lib/
 | Paket | Amaç |
 |---|---|
 | `sqflite` | Yerel SQLite veritabanı |
-| `shared_preferences` | Ayarların saklanması |
+| `shared_preferences` | Ayarların ve tema tercihinin saklanması |
 | `flutter_local_notifications` | Yerel bildirimler |
 | `flutter_background_service` | Uygulama kapalıyken arka plan kontrolü |
 | `intl` | Tarih / para formatlama |
 | `path` | Veritabanı yolu birleştirme |
+| `path_provider` | CSV dosyası için uygulama klasörü |
+| `share_plus` | CSV dosyasını paylaşma / indirme menüsü |
+| `sqflite_common_ffi` (dev) | Veritabanı testlerini masaüstünde çalıştırma |
