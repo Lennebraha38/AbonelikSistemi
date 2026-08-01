@@ -77,9 +77,7 @@ class NotificationService {
         foregroundServiceTypes: [AndroidForegroundType.dataSync],
         initialNotificationTitle: 'Abonelik Takibi',
         initialNotificationContent: 'Yenileme kontrolleri aktif',
-        androidNotificationChannelId:
-            'com.anomalyco.subscription_manager/notifications',
-        androidNotificationOngoing: true,
+        notificationChannelId: _renewalChannel.id,
       ),
       iosConfiguration: IosConfiguration(
         autoStart: true,
@@ -94,7 +92,10 @@ class NotificationService {
   }
 
   static Future<void> stopBackgroundService() async {
-    await FlutterBackgroundService().stopService();
+    final service = FlutterBackgroundService();
+    if (await service.isRunning()) {
+      service.invoke('stopService');
+    }
   }
 
   // ---------- Arka plan servisi ----------
@@ -189,7 +190,7 @@ class NotificationService {
         ? 'bugün'
         : days == 1
             ? 'yarın'
-            : '${days} gün sonra';
+            : '$days gün sonra';
 
     await _notifications.show(
       renewalNotificationBaseId + (subscription.id ?? 0),

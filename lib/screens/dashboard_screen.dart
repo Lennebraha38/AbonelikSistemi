@@ -156,7 +156,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 return Chip(
                   backgroundColor: Colors.white24,
                   label: Text(
-                    '${sym}${_amountFormat.format(entry.value)} ${entry.key}',
+                    '$sym${_amountFormat.format(entry.value)} ${entry.key}',
                     style: const TextStyle(color: Colors.white, fontSize: 12),
                   ),
                 );
@@ -240,7 +240,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 fontWeight: FontWeight.w600,
               ),
             ),
-            backgroundColor: color.withOpacity(0.1),
+            backgroundColor: color.withValues(alpha: 0.1),
             side: BorderSide.none,
             visualDensity: VisualDensity.compact,
           ),
