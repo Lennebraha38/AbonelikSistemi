@@ -56,26 +56,33 @@ jobs:
       - name: Enable core library desugaring (flutter_local_notifications)
         continue-on-error: true
         run: |
-          ls -la android/app/ > desugar.log 2>&1
-          ls -R android/ >> desugar.log 2>&1
-          python3 - <<'PY' 2>&1 | tee -a desugar.log
-          import re
+          python3 - <<'PY' 2>&1 | tee desugar.log
+          import os, re
           p = 'android/app/build.gradle'
+          if not os.path.exists(p):
+              p = 'android/app/build.gradle.kts'
           s = open(p).read()
-          if 'isCoreLibraryDesugaringEnabled' not in s and 'coreLibraryDesugaringEnabled' not in s:
-              if 'compileOptions {' in s:
+          if p.endswith('.kts'):
+              if 'isCoreLibraryDesugaringEnabled' not in s:
                   s = s.replace('compileOptions {', 'compileOptions {\n        isCoreLibraryDesugaringEnabled = true', 1)
-              else:
-                  s = s.replace('android {', 'android {\n    compileOptions {\n        isCoreLibraryDesugaringEnabled = true\n    }', 1)
+              if 'coreLibraryDesugaring' not in s:
+                  s += '\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n}\n'
           else:
-              s = re.sub(r'isCoreLibraryDesugaringEnabled\s*=\s*(true|false)', 'isCoreLibraryDesugaringEnabled = true', s)
-              s = re.sub(r'coreLibraryDesugaringEnabled\s+(true|false)', 'coreLibraryDesugaringEnabled true', s)
-          if 'desugar_jdk_libs' not in s:
-              if 'dependencies {' in s:
-                  s = s.replace('dependencies {', 'dependencies {\n    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"', 1)
+              if 'isCoreLibraryDesugaringEnabled' not in s and 'coreLibraryDesugaringEnabled' not in s:
+                  if 'compileOptions {' in s:
+                      s = s.replace('compileOptions {', 'compileOptions {\n        isCoreLibraryDesugaringEnabled = true', 1)
+                  else:
+                      s = s.replace('android {', 'android {\n    compileOptions {\n        isCoreLibraryDesugaringEnabled = true\n    }', 1)
               else:
-                  s += '\ndependencies {\n    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"\n}\n'
+                  s = re.sub(r'isCoreLibraryDesugaringEnabled\s*=\s*(true|false)', 'isCoreLibraryDesugaringEnabled = true', s)
+                  s = re.sub(r'coreLibraryDesugaringEnabled\s+(true|false)', 'coreLibraryDesugaringEnabled true', s)
+              if 'desugar_jdk_libs' not in s:
+                  if 'dependencies {' in s:
+                      s = s.replace('dependencies {', 'dependencies {\n    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"', 1)
+                  else:
+                      s += '\ndependencies {\n    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"\n}\n'
           open(p, 'w').write(s)
+          print('patched:', p)
           PY
           exit ${PIPESTATUS[0]}
 
