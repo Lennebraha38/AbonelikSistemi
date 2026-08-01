@@ -1,0 +1,1 @@
+# Abonelik-ve-Gider-Y-neticisi-
