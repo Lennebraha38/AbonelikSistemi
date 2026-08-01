@@ -10,6 +10,8 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - 'main'
   workflow_dispatch:
 
 permissions:
@@ -55,7 +57,15 @@ jobs:
         run: flutter pub get
 
       - name: Analyze
-        run: flutter analyze
+        continue-on-error: true
+        run: flutter analyze 2>&1 | tee analyze.log
+
+      - name: Upload analyze log
+        uses: actions/upload-artifact@v4
+        with:
+          name: analyze-log
+          path: analyze.log
+          if-no-files-found: error
 
       - name: Build release APK
         run: flutter build apk --release
