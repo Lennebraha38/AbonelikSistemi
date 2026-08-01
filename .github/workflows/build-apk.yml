@@ -1,0 +1,88 @@
+name: APK Build & Release
+
+# Tetikleyiciler:
+# 1) `git tag v1.0.0` + push  -> APK derlenir, "Release" sayfası oluşturulur,
+#    .zip (kaynak + APK) release'e eklenir. Release sayfası indirme sitesidir.
+# 2) Manual "Run workflow"     -> APK derlenir, zip Actions artifact'ı olarak
+#    indirilebilir (Release oluşturulmaz).
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  APP_NAME: subscription_manager
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Accept Android SDK licenses
+        run: |
+          if [ -f "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          fi
+
+      # lib/ ve pubspec.yaml hazır olduğu için eksik platform klasörlerini
+      # (android/, ios/, vb.) CI'da üretiyoruz. Var olan dosyalar korunur.
+      - name: Generate platform folders
+        run: |
+          flutter create --org com.anomalyco .
+          rm -f test/widget_test.dart
+
+      - name: Fetch dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Package zip (project + APK)
+        run: |
+          set -e
+          cp build/app/outputs/flutter-apk/app-release.apk ./app-release.apk
+          VERSION="${GITHUB_REF_NAME:-manual}"
+          ZIP_NAME="${APP_NAME}-${VERSION}.zip"
+          echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
+          zip -r "${ZIP_NAME}" \
+            app-release.apk \
+            lib pubspec.yaml README.md \
+            android -x "android/build/*" "android/app/build/*" "android/.gradle/*"
+          ls -lh "${ZIP_NAME}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ZIP_NAME }}
+          path: ${{ env.ZIP_NAME }}
+          if-no-files-found: error
+
+      - name: Create GitHub Release (only on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ZIP_NAME }}
+          generate_release_notes: true
