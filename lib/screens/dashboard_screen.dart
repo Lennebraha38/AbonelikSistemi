@@ -579,7 +579,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             actionLabel: 'Abonelik Ekle',
             onAction: _openAddScreen,
           )
-        : EmptyState(
+        : const EmptyState(
             icon: Icons.search_off,
             title: 'Sonuç bulunamadı.',
             description: 'Filtreyi veya arama terimini değiştirebilirsiniz.',

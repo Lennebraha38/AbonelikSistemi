@@ -20,7 +20,7 @@ void main() {
     await AppDatabase.instance.resetForTesting();
   });
 
-  Subscription _sub({
+  Subscription makeSub({
     int? id,
     String name = 'Netflix',
     double price = 100,
@@ -44,7 +44,7 @@ void main() {
 
   test('insert + getSubscriptions döngüsü', () async {
     final db = AppDatabase.instance;
-    final id = await db.insertSubscription(_sub(name: 'Spotify'));
+    final id = await db.insertSubscription(makeSub(name: 'Spotify'));
     expect(id, greaterThan(0));
 
     final all = await db.getSubscriptions();
@@ -57,9 +57,9 @@ void main() {
 
   test('getActiveSubscriptions iptal edilmişleri dışlar', () async {
     final db = AppDatabase.instance;
-    await db.insertSubscription(_sub(name: 'Aktif'));
+    await db.insertSubscription(makeSub(name: 'Aktif'));
     await db.insertSubscription(
-      _sub(name: 'İptal', status: Subscription.cancelled),
+      makeSub(name: 'İptal', status: Subscription.cancelled),
     );
 
     final active = await db.getActiveSubscriptions();
@@ -69,7 +69,7 @@ void main() {
 
   test('cancel / reactivate durumu değiştirir', () async {
     final db = AppDatabase.instance;
-    final id = await db.insertSubscription(_sub());
+    final id = await db.insertSubscription(makeSub());
 
     await db.cancelSubscription(id);
     expect(await db.getActiveSubscriptions(), isEmpty);
@@ -80,9 +80,9 @@ void main() {
 
   test('updateSubscription alanları günceller', () async {
     final db = AppDatabase.instance;
-    final id = await db.insertSubscription(_sub(name: 'Eski Ad'));
+    final id = await db.insertSubscription(makeSub(name: 'Eski Ad'));
 
-    await db.updateSubscription(_sub(id: id, name: 'Yeni Ad'));
+    await db.updateSubscription(makeSub(id: id, name: 'Yeni Ad'));
 
     final all = await db.getSubscriptions();
     expect(all.single.name, 'Yeni Ad');
@@ -91,17 +91,17 @@ void main() {
 
   test('deleteSubscription kaydı siler', () async {
     final db = AppDatabase.instance;
-    final id = await db.insertSubscription(_sub());
+    final id = await db.insertSubscription(makeSub());
     await db.deleteSubscription(id);
     expect(await db.getSubscriptions(), isEmpty);
   });
 
   test('getMonthlyTotalByCurrency para birimine göre toplar', () async {
     final db = AppDatabase.instance;
-    await db.insertSubscription(_sub(price: 100, currency: 'TRY'));
-    await db.insertSubscription(_sub(price: 200, currency: 'TRY'));
+    await db.insertSubscription(makeSub(price: 100, currency: 'TRY'));
+    await db.insertSubscription(makeSub(price: 200, currency: 'TRY'));
     await db.insertSubscription(
-      _sub(price: 1200, currency: 'USD', billingCycle: 'yearly'),
+      makeSub(price: 1200, currency: 'USD', billingCycle: 'yearly'),
     );
 
     final totals = await db.getMonthlyTotalByCurrency();
@@ -112,8 +112,8 @@ void main() {
   test('getMonthlyTotal seçili birime çevirir', () async {
     final db = AppDatabase.instance;
     // 300 TRY -> USD (0.029) -> 8.7 USD
-    await db.insertSubscription(_sub(price: 100, currency: 'TRY'));
-    await db.insertSubscription(_sub(price: 200, currency: 'TRY'));
+    await db.insertSubscription(makeSub(price: 100, currency: 'TRY'));
+    await db.insertSubscription(makeSub(price: 200, currency: 'TRY'));
 
     final total = await db.getMonthlyTotal(displayCurrency: 'USD');
     expect(total, closeTo(300 * 0.029, 0.001));
@@ -125,18 +125,18 @@ void main() {
     final today = DateTime(now.year, now.month, now.day);
     // Bugün yenilenecek (kalan 0 gün)
     await db.insertSubscription(
-      _sub(name: 'Bugün Yenilenen', startDate: today),
+      makeSub(name: 'Bugün Yenilenen', startDate: today),
     );
     // Çok sonra yenilenecek
     await db.insertSubscription(
-      _sub(
+      makeSub(
         name: 'Uzak',
         startDate: DateTime(now.year, now.month + 1, now.day),
       ),
     );
     // İptal edilmiş, bugün yenilense de dahil edilmemeli
     await db.insertSubscription(
-      _sub(name: 'İptal', status: Subscription.cancelled, startDate: today),
+      makeSub(name: 'İptal', status: Subscription.cancelled, startDate: today),
     );
 
     final upcoming = await db.getUpcomingRenewals(3);
@@ -146,7 +146,7 @@ void main() {
 
   test('updateLastNotifiedDate kaydedilir', () async {
     final db = AppDatabase.instance;
-    final id = await db.insertSubscription(_sub());
+    final id = await db.insertSubscription(makeSub());
     final date = DateTime(2026, 5, 1);
 
     await db.updateLastNotifiedDate(id, date);
@@ -157,7 +157,7 @@ void main() {
 
   test('insertPayment + getPaymentsForSubscription döngüsü', () async {
     final db = AppDatabase.instance;
-    final id = await db.insertSubscription(_sub());
+    final id = await db.insertSubscription(makeSub());
 
     await db.insertPayment(
       Payment(
@@ -186,7 +186,7 @@ void main() {
 
   test('deletePayment kaydı siler', () async {
     final db = AppDatabase.instance;
-    final id = await db.insertSubscription(_sub());
+    final id = await db.insertSubscription(makeSub());
     final payId = await db.insertPayment(
       Payment(
         subscriptionId: id,
@@ -202,7 +202,7 @@ void main() {
 
   test('deleteSubscription ödemeleri de siler', () async {
     final db = AppDatabase.instance;
-    final id = await db.insertSubscription(_sub());
+    final id = await db.insertSubscription(makeSub());
     await db.insertPayment(
       Payment(
         subscriptionId: id,

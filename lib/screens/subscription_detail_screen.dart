@@ -238,7 +238,7 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
                         ),
                       );
                       HapticFeedback.lightImpact();
-                      Navigator.of(context).pop(true);
+                      if (mounted) Navigator.of(context).pop(true);
                     },
               child: const Text('Kaydet'),
             ),
@@ -466,9 +466,9 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
+                const Text(
                   'Ödeme Geçmişi',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                   ),

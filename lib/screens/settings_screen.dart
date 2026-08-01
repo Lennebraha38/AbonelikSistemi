@@ -141,7 +141,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await ExportService.restoreBackupData(data, replace: choice == 'replace');
       HapticFeedback.mediumImpact();
       messenger.showSnackBar(
-        SnackBar(content: Text('Yedek başarıyla geri yüklendi.')),
+        const SnackBar(content: Text('Yedek başarıyla geri yüklendi.')),
       );
     } catch (error) {
       messenger.showSnackBar(

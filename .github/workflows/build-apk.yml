@@ -67,6 +67,11 @@ jobs:
                   s = s.replace('compileOptions {', 'compileOptions {\n        isCoreLibraryDesugaringEnabled = true', 1)
               if 'coreLibraryDesugaring' not in s:
                   s += '\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n}\n'
+              # file_picker / flutter_plugin_android_lifecycle SDK 36 istiyor
+              if 'compileSdk' in s:
+                  s = re.sub(r'compileSdk\s*=\s*[^\\n]+', 'compileSdk = 36', s, count=1)
+              else:
+                  s = s.replace('android {', 'android {\n    compileSdk = 36', 1)
           else:
               if 'isCoreLibraryDesugaringEnabled' not in s and 'coreLibraryDesugaringEnabled' not in s:
                   if 'compileOptions {' in s:
@@ -81,8 +86,13 @@ jobs:
                       s = s.replace('dependencies {', 'dependencies {\n    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"', 1)
                   else:
                       s += '\ndependencies {\n    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"\n}\n'
+              if 'compileSdk' in s:
+                  s = re.sub(r'compileSdk\s+[\\d]+', 'compileSdk 36', s, count=1)
+              else:
+                  s = s.replace('android {', 'android {\n    compileSdk 36', 1)
           open(p, 'w').write(s)
           print('patched:', p)
+          print('compileSdk -> 36, desugaring enabled')
           PY
           exit ${PIPESTATUS[0]}
 

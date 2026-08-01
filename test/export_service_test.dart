@@ -23,7 +23,7 @@ void main() {
     await AppDatabase.instance.resetForTesting();
   });
 
-  Subscription _sub({
+  Subscription makeSub({
     int? id,
     String name = 'Netflix',
     double price = 100,
@@ -46,8 +46,8 @@ void main() {
 
   test('buildCsv başlık ve satır üretir', () async {
     final csv = await ExportService.buildCsv([
-      _sub(name: 'Spotify'),
-      _sub(name: 'İptal, Edildi', status: Subscription.cancelled),
+      makeSub(name: 'Spotify'),
+      makeSub(name: 'İptal, Edildi', status: Subscription.cancelled),
     ]);
 
     expect(csv, startsWith('id,name,price,currency,billing_cycle'));
@@ -58,7 +58,7 @@ void main() {
 
   test('buildBackupJson → parseBackupJson döngüsü korur', () async {
     final db = AppDatabase.instance;
-    final subId = await db.insertSubscription(_sub(name: 'Netflix'));
+    final subId = await db.insertSubscription(makeSub(name: 'Netflix'));
     await db.insertPayment(
       Payment(
         subscriptionId: subId,
@@ -89,11 +89,11 @@ void main() {
 
   test('restoreBackupData replace ile mevcut veriyi değiştirir', () async {
     final db = AppDatabase.instance;
-    await db.insertSubscription(_sub(name: 'Eski'));
+    await db.insertSubscription(makeSub(name: 'Eski'));
 
     final backup = ExportService.parseBackupJson(jsonEncode({
       'subscriptions': [
-        _sub(name: 'Yeni').toMap()..['id'] = 99,
+        makeSub(name: 'Yeni').toMap()..['id'] = 99,
       ],
       'payments': [
         {
@@ -119,11 +119,11 @@ void main() {
 
   test('restoreBackupData merge ile üzerine ekler', () async {
     final db = AppDatabase.instance;
-    await db.insertSubscription(_sub(name: 'Mevcut'));
+    await db.insertSubscription(makeSub(name: 'Mevcut'));
 
     final backup = ExportService.parseBackupJson(jsonEncode({
       'subscriptions': [
-        _sub(name: 'Eklenen').toMap(),
+        makeSub(name: 'Eklenen').toMap(),
       ],
     }));
 
@@ -152,8 +152,8 @@ void main() {
 
   test('buildIcs aktif abonelikler için VEVENT üretir', () {
     final ics = ExportService.buildIcs([
-      _sub(name: 'Netflix, HD', billingCycle: 'yearly'),
-      _sub(name: 'İptal', status: Subscription.cancelled),
+      makeSub(name: 'Netflix, HD', billingCycle: 'yearly'),
+      makeSub(name: 'İptal', status: Subscription.cancelled),
     ]);
 
     expect(ics, startsWith('BEGIN:VCALENDAR\n'));
