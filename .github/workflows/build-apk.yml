@@ -56,24 +56,24 @@ jobs:
       - name: Enable core library desugaring (flutter_local_notifications)
         run: |
           python3 - <<'PY'
-import re
-p = 'android/app/build.gradle'
-s = open(p).read()
-if 'isCoreLibraryDesugaringEnabled' not in s and 'coreLibraryDesugaringEnabled' not in s:
-    if 'compileOptions {' in s:
-        s = s.replace('compileOptions {', 'compileOptions {\n        isCoreLibraryDesugaringEnabled = true', 1)
-    else:
-        s = s.replace('android {', 'android {\n    compileOptions {\n        isCoreLibraryDesugaringEnabled = true\n    }', 1)
-else:
-    s = re.sub(r'isCoreLibraryDesugaringEnabled\s*=\s*(true|false)', 'isCoreLibraryDesugaringEnabled = true', s)
-    s = re.sub(r'coreLibraryDesugaringEnabled\s+(true|false)', 'coreLibraryDesugaringEnabled true', s)
-if 'desugar_jdk_libs' not in s:
-    if 'dependencies {' in s:
-        s = s.replace('dependencies {', 'dependencies {\n    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"', 1)
-    else:
-        s += '\ndependencies {\n    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"\n}\n'
-open(p, 'w').write(s)
-PY
+          import re
+          p = 'android/app/build.gradle'
+          s = open(p).read()
+          if 'isCoreLibraryDesugaringEnabled' not in s and 'coreLibraryDesugaringEnabled' not in s:
+              if 'compileOptions {' in s:
+                  s = s.replace('compileOptions {', 'compileOptions {\n        isCoreLibraryDesugaringEnabled = true', 1)
+              else:
+                  s = s.replace('android {', 'android {\n    compileOptions {\n        isCoreLibraryDesugaringEnabled = true\n    }', 1)
+          else:
+              s = re.sub(r'isCoreLibraryDesugaringEnabled\s*=\s*(true|false)', 'isCoreLibraryDesugaringEnabled = true', s)
+              s = re.sub(r'coreLibraryDesugaringEnabled\s+(true|false)', 'coreLibraryDesugaringEnabled true', s)
+          if 'desugar_jdk_libs' not in s:
+              if 'dependencies {' in s:
+                  s = s.replace('dependencies {', 'dependencies {\n    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"', 1)
+              else:
+                  s += '\ndependencies {\n    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"\n}\n'
+          open(p, 'w').write(s)
+          PY
 
       - name: Fetch dependencies
         run: flutter pub get
