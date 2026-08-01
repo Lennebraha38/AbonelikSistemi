@@ -69,7 +69,16 @@ jobs:
           fi
 
       - name: Build release APK
-        run: flutter build apk --release
+        continue-on-error: true
+        run: flutter build apk --release 2>&1 | tee build.log
+
+      - name: Emit build errors as annotations
+        run: |
+          if [ -s build.log ]; then
+            grep -iE "what went wrong|execution failed|BUILD FAILED|FAILURE:|error:|caused by|exception|unsatisfied|unable to" build.log | tail -25 | while IFS= read -r line; do
+              echo "::error file=build.log::$line"
+            done
+          fi
 
       - name: Package zip (project + APK)
         run: |
