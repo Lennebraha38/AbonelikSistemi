@@ -54,8 +54,11 @@ jobs:
           rm -f test/widget_test.dart
 
       - name: Enable core library desugaring (flutter_local_notifications)
+        continue-on-error: true
         run: |
-          python3 - <<'PY'
+          ls -la android/app/ > desugar.log 2>&1
+          ls -R android/ >> desugar.log 2>&1
+          python3 - <<'PY' 2>&1 | tee -a desugar.log
           import re
           p = 'android/app/build.gradle'
           s = open(p).read()
@@ -74,6 +77,15 @@ jobs:
                   s += '\ndependencies {\n    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"\n}\n'
           open(p, 'w').write(s)
           PY
+          exit ${PIPESTATUS[0]}
+
+      - name: Emit desugaring log as annotations
+        run: |
+          if [ -s desugar.log ]; then
+            tail -50 desugar.log | tac | while IFS= read -r line; do
+              echo "::error file=desugar.log::$line"
+            done
+          fi
 
       - name: Fetch dependencies
         run: flutter pub get
