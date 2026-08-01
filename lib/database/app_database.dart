@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../models/payment.dart';
 import '../models/subscription.dart';
 
 /// Yerel SQLite veritabanı katmanı.
@@ -13,7 +14,7 @@ class AppDatabase {
 
   /// Şema sürümü. Değişiklik yapıldığında bir üst sayıya çekilir ve
   /// [onUpgrade] içine eski sürümden gelen migration'lar eklenir.
-  static const int schemaVersion = 3;
+  static const int schemaVersion = 4;
 
   /// Testlerde normal dosya yolunu geçersiz kılar (örn. `:memory:`).
   @visibleForTesting
@@ -54,6 +55,16 @@ class AppDatabase {
             reminder_days INTEGER NOT NULL DEFAULT 3
           )
         ''');
+        await db.execute('''
+          CREATE TABLE payments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            subscription_id INTEGER NOT NULL,
+            amount REAL NOT NULL,
+            currency TEXT NOT NULL,
+            paid_at TEXT NOT NULL,
+            note TEXT
+          )
+        ''');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -71,6 +82,18 @@ class AppDatabase {
           await db.execute(
             'ALTER TABLE subscriptions ADD COLUMN reminder_days INTEGER NOT NULL DEFAULT 3',
           );
+        }
+        if (oldVersion < 4) {
+          await db.execute('''
+            CREATE TABLE payments (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subscription_id INTEGER NOT NULL,
+              amount REAL NOT NULL,
+              currency TEXT NOT NULL,
+              paid_at TEXT NOT NULL,
+              note TEXT
+            )
+          ''');
         }
       },
     );
@@ -187,6 +210,51 @@ class AppDatabase {
 
   Future<int> deleteSubscription(int id) async {
     final db = await database;
+    await db.delete('payments', where: 'subscription_id = ?', whereArgs: [id]);
     return db.delete('subscriptions', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// Tüm verileri siler (yedekten "değiştir" modunda geri yükleme için).
+  Future<void> deleteAllData() async {
+    final db = await database;
+    await db.delete('payments');
+    await db.delete('subscriptions');
+  }
+
+  // ---------- ÖDEMELER (payment history) ----------
+
+  Future<int> insertPayment(Payment payment) async {
+    final db = await database;
+    return db.insert('payments', {
+      'subscription_id': payment.subscriptionId,
+      'amount': payment.amount,
+      'currency': payment.currency,
+      'paid_at': payment.paidAt.toIso8601String(),
+      'note': payment.note,
+    });
+  }
+
+  /// Bir aboneliğin tüm ödemeleri, en yenisi üstte olacak şekilde.
+  Future<List<Payment>> getPaymentsForSubscription(int subscriptionId) async {
+    final db = await database;
+    final rows = await db.query(
+      'payments',
+      where: 'subscription_id = ?',
+      whereArgs: [subscriptionId],
+      orderBy: 'paid_at DESC, id DESC',
+    );
+    return rows.map(Payment.fromMap).toList();
+  }
+
+  /// Tüm ödemeler (yedekleme ve istatistik için).
+  Future<List<Payment>> getAllPayments() async {
+    final db = await database;
+    final rows = await db.query('payments', orderBy: 'paid_at DESC, id DESC');
+    return rows.map(Payment.fromMap).toList();
+  }
+
+  Future<int> deletePayment(int id) async {
+    final db = await database;
+    return db.delete('payments', where: 'id = ?', whereArgs: [id]);
   }
 }

@@ -34,6 +34,9 @@ dependencies:
   path_provider: ^2.1.4
   share_plus: ^10.0.0
 
+  # Yedek geri yükleme (JSON dosya seçici)
+  file_picker: ^8.1.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

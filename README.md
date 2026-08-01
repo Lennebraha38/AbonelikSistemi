@@ -8,21 +8,27 @@ kalan abonelikler için **sabah 09:00**'da yerel bildirim gönderir.
 ## Özellikler
 
 - **Dashboard**: En üstte büyük puntolarla "Aylık Toplam Gider", altında
-  tarihe göre sıralı yaklaşan ödemeler; kategoriye göre filtreleme; iptal,
-  iptali geri alma, silme ve **düzenleme** menüsü.
+  tarihe göre sıralı yaklaşan ödemeler; **arama**, kategoriye göre filtreleme,
+  **aylık bütçe aşımı uyarısı**, bildirim izni kapalıyken hatırlatma banner'ı;
+  iptal, iptali geri alma, silme, **düzenleme** ve **detay** ekranı.
 - **Abonelik Ekle / Düzenle**: Uygulama adı, fiyat, para birimi (TRY/USD/EUR),
   fatura döngüsü (aylık/yıllık), kategori, ilk ödeme tarihi, hatırlatma günü
   (1/3/7) ve opsiyonel deneme süresi.
+- **Detay ekranı**: Aboneliğin tüm bilgileri, sonraki yenileme tarihi ve
+  **ödeme geçmişi** (ödeme ekle/sil, tutar + not).
 - **İstatistikler**: Aylık/yıllık toplam, önümüzdeki 7 gündeki ödemeler,
   kategoriye göre donut grafik ve en pahalı abonelikler.
-- **Ayarlar**: Açık/koyu/sistem teması, görüntüleme para birimi, bildirim
-  aç/kapa, bildirim saati ve **CSV dışa aktarma** (yedek/paylaşım).
+- **Ayarlar**: Açık/koyu/sistem teması, görüntüleme para birimi, **aylık
+  bütçe**, bildirim aç/kapa, bildirim saati, **JSON yedek al / geri yükle**
+  (değiştir veya birleştir), **CSV dışa aktarma** ve **takvime aktarma (.ics)**.
 - **Bildirimler**: Yenilenmesine 3 gün veya daha az kalan abonelikler için
   günlük uyarı + **bitmesine 3 gün veya daha az kalan deneme süreleri** için
   uyarı (varsayılan 09:00, ayarlanabilir).
 - **Veritabanı**: SQLite (sqflite) — tüm veriler cihazda, internet gerektirmez.
 - **Arka plan**: flutter_background_service ile uygulama kapalıyken de
   periyodik kontrol; flutter_local_notifications ile bildirim.
+- **Görsel**: Material 3 uyumlu arayüz, uygulama ikonu ve açılış ekranı
+  (splash), boş durum ekranları.
 
 ## Kurulum
 
@@ -116,17 +122,21 @@ lib/
 ├── main.dart                  → uygulama girişi, tema + servis kurulumu
 ├── models/
 │   ├── subscription.dart      → Subscription modeli + CurrencyConverter
-│   └── categories.dart        → kategori kataloğu (ad, simge, renk)
+│   ├── categories.dart        → kategori kataloğu (ad, simge, renk)
+│   └── payment.dart           → ödeme geçmişi kaydı
 ├── database/
 │   └── app_database.dart      → SQLite CRUD + aylık toplam hesapları
 ├── services/
 │   ├── notification_service.dart → yerel bildirimler + arka plan servisi
-│   └── export_service.dart    → CSV dışa aktarma + paylaşım
+│   └── export_service.dart    → CSV/JSON/ICS dışa aktarma + geri yükleme
 ├── theme/
 │   └── theme_controller.dart  → açık/koyu/sistem teması yönetimi
+├── widgets/
+│   └── empty_state.dart       → boş durum ekranı bileşeni
 └── screens/
     ├── dashboard_screen.dart
     ├── add_subscription_screen.dart  → ekle + düzenleme
+    ├── subscription_detail_screen.dart → detay + ödeme geçmişi
     ├── insights_screen.dart
     └── settings_screen.dart
 ```
@@ -141,6 +151,7 @@ lib/
 | `flutter_background_service` | Uygulama kapalıyken arka plan kontrolü |
 | `intl` | Tarih / para formatlama |
 | `path` | Veritabanı yolu birleştirme |
-| `path_provider` | CSV dosyası için uygulama klasörü |
-| `share_plus` | CSV dosyasını paylaşma / indirme menüsü |
+| `path_provider` | Dışa aktarma dosyaları için uygulama klasörü |
+| `share_plus` | Dosyaları paylaşma / indirme menüsü |
+| `file_picker` | Yedek geri yüklemede JSON dosyası seçme |
 | `sqflite_common_ffi` (dev) | Veritabanı testlerini masaüstünde çalıştırma |

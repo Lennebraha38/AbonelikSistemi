@@ -65,6 +65,23 @@ class NotificationService {
         ?.requestPermissions(alert: true, badge: true, sound: true);
   }
 
+  /// Android 13+ için çalışma zamanı izni.
+  static Future<void> requestNotificationPermission() async {
+    await _notifications
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.requestNotificationsPermission();
+  }
+
+  /// Bildirim izni verilmiş mi? (Android'de denetler)
+  static Future<bool> notificationsPermissionGranted() async {
+    final enabled = await _notifications
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.areNotificationsEnabled();
+    return enabled ?? true;
+  }
+
   static Future<void> configureAndStartBackgroundService() async {
     final service = FlutterBackgroundService();
 

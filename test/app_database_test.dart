@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:subscription_manager/database/app_database.dart';
+import 'package:subscription_manager/models/payment.dart';
 import 'package:subscription_manager/models/subscription.dart';
 
 void main() {
@@ -152,5 +153,66 @@ void main() {
 
     final saved = (await db.getSubscriptions()).single;
     expect(saved.lastNotifiedDate, date);
+  });
+
+  test('insertPayment + getPaymentsForSubscription döngüsü', () async {
+    final db = AppDatabase.instance;
+    final id = await db.insertSubscription(_sub());
+
+    await db.insertPayment(
+      Payment(
+        subscriptionId: id,
+        amount: 100,
+        currency: 'TRY',
+        paidAt: DateTime(2026, 7, 20),
+        note: 'İlk ödeme',
+      ),
+    );
+    await db.insertPayment(
+      Payment(
+        subscriptionId: id,
+        amount: 100,
+        currency: 'TRY',
+        paidAt: DateTime(2026, 8, 20),
+      ),
+    );
+
+    final payments = await db.getPaymentsForSubscription(id);
+    expect(payments, hasLength(2));
+    expect(payments.first.paidAt, DateTime(2026, 8, 20));
+    expect(payments.last.note, 'İlk ödeme');
+    expect(payments.last.amount, closeTo(100, 0.001));
+  });
+
+  test('deletePayment kaydı siler', () async {
+    final db = AppDatabase.instance;
+    final id = await db.insertSubscription(_sub());
+    final payId = await db.insertPayment(
+      Payment(
+        subscriptionId: id,
+        amount: 100,
+        currency: 'TRY',
+        paidAt: DateTime(2026, 7, 20),
+      ),
+    );
+
+    await db.deletePayment(payId);
+    expect(await db.getPaymentsForSubscription(id), isEmpty);
+  });
+
+  test('deleteSubscription ödemeleri de siler', () async {
+    final db = AppDatabase.instance;
+    final id = await db.insertSubscription(_sub());
+    await db.insertPayment(
+      Payment(
+        subscriptionId: id,
+        amount: 100,
+        currency: 'TRY',
+        paidAt: DateTime(2026, 7, 20),
+      ),
+    );
+
+    await db.deleteSubscription(id);
+    expect(await db.getAllPayments(), isEmpty);
   });
 }
