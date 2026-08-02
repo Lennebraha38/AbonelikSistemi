@@ -238,7 +238,7 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
                         ),
                       );
                       HapticFeedback.lightImpact();
-                      if (mounted) Navigator.of(context).pop(true);
+                      if (context.mounted) Navigator.of(context).pop(true);
                     },
               child: const Text('Kaydet'),
             ),

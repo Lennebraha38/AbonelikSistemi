@@ -62,16 +62,34 @@ jobs:
           if not os.path.exists(p):
               p = 'android/app/build.gradle.kts'
           s = open(p).read()
-          if p.endswith('.kts'):
+          is_kts = p.endswith('.kts')
+
+          # compileSdk'i 36 yap (file_picker / flutter_plugin_android_lifecycle SDK 36 istiyor)
+          def set_compile_sdk(src, kts):
+              lines = src.split('\n')
+              for i, line in enumerate(lines):
+                  if 'compileSdk' in line:
+                      if '=' in line:
+                          lines[i] = re.sub(r'\s*=.*', ' = 36', line)
+                      else:
+                          lines[i] = re.sub(r'compileSdk.*', 'compileSdk 36', line)
+                      break
+              else:
+                  # satir yoksa android{} bloguna ekle
+                  for i, line in enumerate(lines):
+                      if line.strip() == 'android {':
+                          lines.insert(i + 1, '        compileSdk = 36' if kts else '    compileSdk 36')
+                          break
+              return '\n'.join(lines)
+
+          s = set_compile_sdk(s, is_kts)
+
+          # core library desugaring
+          if is_kts:
               if 'isCoreLibraryDesugaringEnabled' not in s:
                   s = s.replace('compileOptions {', 'compileOptions {\n        isCoreLibraryDesugaringEnabled = true', 1)
               if 'coreLibraryDesugaring' not in s:
                   s += '\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n}\n'
-              # file_picker / flutter_plugin_android_lifecycle SDK 36 istiyor
-              if 'compileSdk' in s:
-                  s = re.sub(r'compileSdk\s*=\s*[^\\n]+', 'compileSdk = 36', s, count=1)
-              else:
-                  s = s.replace('android {', 'android {\n    compileSdk = 36', 1)
           else:
               if 'isCoreLibraryDesugaringEnabled' not in s and 'coreLibraryDesugaringEnabled' not in s:
                   if 'compileOptions {' in s:
@@ -86,13 +104,11 @@ jobs:
                       s = s.replace('dependencies {', 'dependencies {\n    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"', 1)
                   else:
                       s += '\ndependencies {\n    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"\n}\n'
-              if 'compileSdk' in s:
-                  s = re.sub(r'compileSdk\s+[\\d]+', 'compileSdk 36', s, count=1)
-              else:
-                  s = s.replace('android {', 'android {\n    compileSdk 36', 1)
           open(p, 'w').write(s)
           print('patched:', p)
-          print('compileSdk -> 36, desugaring enabled')
+          for line in s.split('\n'):
+              if 'compileSdk' in line or 'isCoreLibraryDesugaringEnabled' in line:
+                  print('>', line.strip())
           PY
           exit ${PIPESTATUS[0]}
 
