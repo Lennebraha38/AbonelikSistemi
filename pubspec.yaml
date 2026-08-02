@@ -37,6 +37,11 @@ dependencies:
   # Yedek geri yükleme (JSON dosya seçici)
   file_picker: ^8.1.2
 
+dependency_overrides:
+  # file_picker'in transitif bagimliligi compileSdk 36 zorunlulugu getiriyor;
+  # CI ortaminda (flutter.compileSdkVersion=35) build'in kirilmamasi icin sabitliyoruz.
+  flutter_plugin_android_lifecycle: 2.0.31
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
