@@ -39,6 +39,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     _loadData();
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _maybeShowWelcome());
+  }
+
+  /// İlk açılışta bir kez gösterilen kısa tanıtım penceresi.
+  Future<void> _maybeShowWelcome() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('welcome_seen') ?? false) return;
+    await prefs.setBool('welcome_seen', true);
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.subscriptions_outlined, size: 40),
+        title: const Text('Abonelik Yöneticisine Hoş Geldiniz'),
+        content: const Text(
+          'Tüm aboneliklerinizi tek yerden takip edin:\n'
+          '• Yenileme ve deneme süresi hatırlatmaları\n'
+          '• Aylık bütçe uyarısı\n'
+          '• Ödeme geçmişi ve gerçek harcama analizi\n'
+          '• JSON yedekleme, CSV ve takvim aktarımı\n\n'
+          'Uygulama tamamen çevrimdışı çalışır; verileriniz '
+          'cihazınızda kalır.',
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Başlayalım'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _loadData() async {

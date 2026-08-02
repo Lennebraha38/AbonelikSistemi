@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../app_info.dart';
 import '../models/subscription.dart';
 import '../services/export_service.dart';
 import '../services/notification_service.dart';
@@ -150,6 +151,200 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
+  }
+
+  Future<void> _editFxRates() async {
+    final tryController = TextEditingController(
+      text: CurrencyConverter.usdToTryRate.toStringAsFixed(2),
+    );
+    final eurController = TextEditingController(
+      text: CurrencyConverter.usdToEurRate.toStringAsFixed(2),
+    );
+    final formKey = GlobalKey<FormState>();
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Döviz Kurları'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: tryController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: '1 USD = ? TRY',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  final parsed =
+                      double.tryParse((value ?? '').trim().replaceAll(',', '.'));
+                  if (parsed == null || parsed <= 0) {
+                    return 'Geçerli bir kur girin';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: eurController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: '1 USD = ? EUR',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  final parsed =
+                      double.tryParse((value ?? '').trim().replaceAll(',', '.'));
+                  if (parsed == null || parsed <= 0) {
+                    return 'Geçerli bir kur girin';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Toplam gider hesaplanırken bu kurlar kullanılır. '
+                  'Uygulama çevrimdışı olduğu için kurları kendiniz '
+                  'güncel tutmanız önerilir.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Vazgeç'),
+          ),
+          TextButton(
+            onPressed: () {
+              if (!formKey.currentState!.validate()) return;
+              Navigator.of(context).pop(true);
+            },
+            child: const Text('Kaydet'),
+          ),
+        ],
+      ),
+    );
+    tryController.dispose();
+    eurController.dispose();
+    if (saved != true || !mounted) return;
+
+    await CurrencyConverter.saveRates(
+      usdToTry: double.parse(
+        tryController.text.trim().replaceAll(',', '.'),
+      ),
+      usdToEur: double.parse(
+        eurController.text.trim().replaceAll(',', '.'),
+      ),
+    );
+    HapticFeedback.lightImpact();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Döviz kurları güncellendi.')),
+    );
+  }
+
+  Future<void> _importCsv() async {
+    if (_exporting) return;
+    final messenger = ScaffoldMessenger.of(context);
+    ParsedCsvData? data;
+    setState(() => _exporting = true);
+    try {
+      data = await ExportService.pickCsvFile();
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Dosya okunamadı: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+    if (data == null || !mounted) return;
+    if (data.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('CSV dosyasında aktarılabilir veri yok.')),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('CSV İçe Aktar'),
+        content: Text(
+          'Dosyada ${data!.subscriptions.length} abonelik ve '
+          '${data.payments.length} ödeme satırı bulundu.\n\n'
+          'Aynı abonelikler ve ödemeler atlanır, yenileri eklenir.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('İçe Aktar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _exporting = true);
+    try {
+      final result = await ExportService.importCsvData(data);
+      HapticFeedback.mediumImpact();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'İçe aktarıldı: ${result.addedSubscriptions} abonelik, '
+            '${result.addedPayments} ödeme eklendi'
+            '${result.skippedSubscriptions + result.skippedPayments > 0 ? ' (tekrar edenler atlandı)' : ''}.',
+          ),
+        ),
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('İçe aktarma başarısız: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  void _showAbout() {
+    showAboutDialog(
+      context: context,
+      applicationName: AppInfo.appName,
+      applicationVersion: AppInfo.version,
+      applicationIcon: const Icon(Icons.subscriptions_outlined, size: 40),
+      children: [
+        Text(AppInfo.description),
+        const SizedBox(height: 12),
+        const Text(
+          'Özellikler:\n'
+          '• Yenileme ve deneme hatırlatmaları\n'
+          '• Aylık bütçe uyarısı\n'
+          '• Ödeme geçmişi takibi\n'
+          '• Kategori bazlı istatistikler\n'
+          '• JSON yedekleme ve geri yükleme\n'
+          '• CSV içe/dışa aktarma ve takvim (.ics) aktarımı',
+        ),
+      ],
+    );
   }
 
   Future<void> _setBudget() async {
@@ -307,6 +502,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 28),
                 Text(
+                  'Döviz Kurları',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Çevrimiçi olmayan dönüşüm için 1 USD bazında kur girin.',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.currency_exchange_outlined),
+                    title: const Text('Kurları düzenle'),
+                    subtitle: Text(
+                      '1 USD = ${CurrencyConverter.usdToTryRate.toStringAsFixed(2)} TRY'
+                      '  •  1 USD = ${CurrencyConverter.usdToEurRate.toStringAsFixed(2)} EUR',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: _editFxRates,
+                  ),
+                ),
+                const SizedBox(height: 28),
+                Text(
                   'Bildirimler',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
@@ -434,11 +652,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ListTile(
                         leading: const Icon(Icons.file_download_outlined),
                         title: const Text('CSV dışa aktar'),
-                        subtitle: const Text('abonelikler.csv oluşturulur'),
+                        subtitle: const Text(
+                          'abonelikler.csv ve odemeler.csv',
+                        ),
                         trailing: _exporting
                             ? const _MiniLoader()
                             : const Icon(Icons.chevron_right),
-                        onTap: () => _runExport(ExportService.exportCsvAndShare),
+                        onTap: () =>
+                            _runExport(ExportService.exportCsvAndShare),
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.file_upload_outlined),
+                        title: const Text('CSV içe aktar'),
+                        subtitle: const Text('CSV dosyasından abonelik ekleyin'),
+                        trailing: _exporting
+                            ? const _MiniLoader()
+                            : const Icon(Icons.chevron_right),
+                        onTap: _importCsv,
                       ),
                     ],
                   ),
@@ -473,6 +704,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       ],
                     ),
+                  ),
+                ),
+                const SizedBox(height: 28),
+                Text(
+                  'Hakkında',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Card(
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.subscriptions_outlined),
+                        title: Text(AppInfo.appName),
+                        subtitle: Text('Sürüm ${AppInfo.version}'),
+                        trailing: const Icon(Icons.info_outline),
+                        onTap: _showAbout,
+                      ),
+                    ],
                   ),
                 ),
               ],

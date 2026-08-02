@@ -115,6 +115,38 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
     );
 
     setState(() => _saving = true);
+
+    // Aynı isimde (büyük/küçük harf duyarsız) başka bir abonelik varsa
+    // kullanıcıyı uyar; onaylanmazsa kaydetmez.
+    final duplicates = (await AppDatabase.instance
+            .getSubscriptionsByName(subscription.name))
+        .where((s) => s.id != subscription.id)
+        .toList();
+    if (duplicates.isNotEmpty) {
+      if (!mounted) return;
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Kopya Abonelik'),
+          content: Text(
+            '"${duplicates.first.name}" isminde bir abonelik zaten var. '
+            'Yine de bu kaydı eklemek istiyor musunuz?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Vazgeç'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Yine de Ekle'),
+            ),
+          ],
+        ),
+      );
+      if (proceed != true || !mounted) return;
+    }
+
     if (_isEditing) {
       await AppDatabase.instance.updateSubscription(subscription);
     } else {

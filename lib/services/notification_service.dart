@@ -5,6 +5,7 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../app_navigation.dart';
 import '../database/app_database.dart';
 import '../models/subscription.dart';
 
@@ -43,9 +44,7 @@ class NotificationService {
 
     await _notifications.initialize(
       const InitializationSettings(android: android, iOS: ios),
-      onDidReceiveNotificationResponse: (NotificationResponse response) {
-        // Bildirime dokunulduğunda uygulama zaten açılır.
-      },
+      onDidReceiveNotificationResponse: _onNotificationTap,
     );
 
     await _notifications
@@ -63,6 +62,18 @@ class NotificationService {
         .resolvePlatformSpecificImplementation<
             IOSFlutterLocalNotificationsPlugin>()
         ?.requestPermissions(alert: true, badge: true, sound: true);
+  }
+
+  /// Bildirime dokunulduğunda ilgili aboneliğin detay ekranını açar.
+  /// Payload biçimi: `renewal:<id>` veya `trial:<id>`.
+  static void _onNotificationTap(NotificationResponse response) {
+    final payload = response.payload;
+    if (payload == null) return;
+    final parts = payload.split(':');
+    if (parts.length != 2) return;
+    final id = int.tryParse(parts[1]);
+    if (id == null) return;
+    openSubscriptionFromNotification(id);
   }
 
   /// Android 13+ için çalışma zamanı izni.
@@ -249,6 +260,7 @@ class NotificationService {
         ),
         iOS: DarwinNotificationDetails(),
       ),
+      payload: 'trial:${subscription.id}',
     );
   }
 
@@ -277,6 +289,7 @@ class NotificationService {
         ),
         iOS: DarwinNotificationDetails(),
       ),
+      payload: 'renewal:${subscription.id}',
     );
   }
 }

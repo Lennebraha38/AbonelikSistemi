@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../database/app_database.dart';
 import '../models/categories.dart';
+import '../models/payment.dart';
 import '../models/subscription.dart';
 
 /// İstatistik ekranı: yıllık/aylık toplam, yaklaşan ödemeler ve
@@ -25,6 +26,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
   double _monthlyTotal = 0;
   double _yearlyTotal = 0;
   List<Subscription> _active = const [];
+  List<Payment> _payments = const [];
   bool _loading = true;
 
   @override
@@ -39,6 +41,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
     final active = await AppDatabase.instance.getActiveSubscriptions();
     final monthly =
         await AppDatabase.instance.getMonthlyTotal(displayCurrency: currency);
+    final payments = await AppDatabase.instance.getAllPayments();
 
     if (!mounted) return;
     setState(() {
@@ -46,8 +49,36 @@ class _InsightsScreenState extends State<InsightsScreen> {
       _active = active;
       _monthlyTotal = monthly;
       _yearlyTotal = monthly * 12;
+      _payments = payments;
       _loading = false;
     });
+  }
+
+  /// Son [months] ay için (bu ay dahil), ödeme geçmişine göre gerçek
+  /// harcama. Tüm ödemeler görüntüleme para birimine çevrilir.
+  List<_MonthSpend> _monthlySpending(int months) {
+    final now = DateTime.now();
+    final result = <_MonthSpend>[];
+    for (var i = months - 1; i >= 0; i--) {
+      final d = DateTime(now.year, now.month - i);
+      result.add(_MonthSpend(
+        year: d.year,
+        month: d.month,
+        amount: 0,
+        isCurrent: i == 0,
+      ));
+    }
+    for (final p in _payments) {
+      final target =
+          result.where((m) => m.year == p.paidAt.year && m.month == p.paidAt.month);
+      if (target.isEmpty) continue;
+      target.first.amount += CurrencyConverter.convert(
+        p.amount,
+        p.currency,
+        _displayCurrency,
+      );
+    }
+    return result;
   }
 
   List<_CategorySlice> _categorySlices() {
@@ -96,6 +127,8 @@ class _InsightsScreenState extends State<InsightsScreen> {
                   _buildUpcomingCard(),
                   const SizedBox(height: 24),
                   _buildCategoryCard(),
+                  const SizedBox(height: 24),
+                  _buildSpendingCard(),
                   const SizedBox(height: 24),
                   _buildTopExpensiveCard(),
                   const SizedBox(height: 32),
@@ -298,8 +331,118 @@ class _InsightsScreenState extends State<InsightsScreen> {
     );
   }
 
-  Widget _buildTopExpensiveCard() {
-    final sorted = [..._active]
+  static const List<String> _trMonths = [
+    'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+    'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık',
+  ];
+
+  /// Ödeme geçmişinden ay bazında gerçek harcamayı gösterir.
+  Widget _buildSpendingCard() {
+    final symbol = CurrencyConverter.symbols[_displayCurrency] ?? '';
+    final months = _monthlySpending(6);
+    final hasAny = months.any((m) => m.amount > 0);
+    final total = months.fold<double>(0, (sum, m) => sum + m.amount);
+    final maxAmount = months.fold<double>(0, (max, m) => math.max(max, m.amount));
+
+    return _sectionCard(
+      title: 'Gerçek Harcama (Ödemeler)',
+      child: !hasAny
+          ? Text(
+              'Henüz ödeme kaydı yok. Abonelik detayından '
+              '"Ödeme Ekle" ile geçmişi takip edebilirsiniz.',
+              style: TextStyle(color: Colors.grey.shade600),
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final m in months)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 96,
+                          child: Text(
+                            m.isCurrent
+                                ? '${_trMonths[m.month - 1]} (bu ay)'
+                                : _trMonths[m.month - 1],
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: m.isCurrent
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Stack(
+                            children: [
+                              Container(
+                                height: 10,
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .surfaceContainerHighest,
+                                  borderRadius: BorderRadius.circular(5),
+                                ),
+                              ),
+                              if (m.amount > 0)
+                                FractionallySizedBox(
+                                  widthFactor:
+                                      maxAmount == 0 ? 0 : m.amount / maxAmount,
+                                  child: Container(
+                                    height: 10,
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primary,
+                                      borderRadius: BorderRadius.circular(5),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        SizedBox(
+                          width: 88,
+                          child: Text(
+                            '$symbol${_amountFormat.format(m.amount)}',
+                            textAlign: TextAlign.end,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                const Divider(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Son 6 aylık toplam',
+                      style: TextStyle(color: Colors.grey.shade700),
+                    ),
+                    Text(
+                      '$symbol${_amountFormat.format(total)} $_displayCurrency',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Ödeme geçmişine eklenen gerçek tutarlar üzerinden hesaplanır.',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildTopExpensiveCard() {    final sorted = [..._active]
       ..sort((a, b) => b.monthlyEquivalent.compareTo(a.monthlyEquivalent));
     final top = sorted.take(3).toList();
     final symbol = CurrencyConverter.symbols[_displayCurrency] ?? '';
@@ -370,6 +513,21 @@ class _CategorySlice {
   final CategoryInfo category;
 
   _CategorySlice(this.key, this.amount, this.count, this.category);
+}
+
+/// Belirli bir ayın (yıl + ay) gerçek harcama tutarı.
+class _MonthSpend {
+  final int year;
+  final int month;
+  double amount;
+  final bool isCurrent;
+
+  _MonthSpend({
+    required this.year,
+    required this.month,
+    required this.amount,
+    required this.isCurrent,
+  });
 }
 
 /// Basit bir donut (halka) grafik çizen painter.

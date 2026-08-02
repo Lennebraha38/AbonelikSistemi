@@ -89,6 +89,27 @@ void main() {
     expect(all.single.id, id);
   });
 
+  test('getSubscriptionById kimliğe göre getirir', () async {
+    final db = AppDatabase.instance;
+    final id = await db.insertSubscription(makeSub(name: 'Netflix'));
+
+    expect((await db.getSubscriptionById(id))?.name, 'Netflix');
+    expect(await db.getSubscriptionById(999), isNull);
+  });
+
+  test('getSubscriptionsByName harf duyarsız eşleşir', () async {
+    final db = AppDatabase.instance;
+    await db.insertSubscription(makeSub(name: 'Netflix'));
+    await db.insertSubscription(makeSub(name: 'Spotify'));
+
+    final matches = await db.getSubscriptionsByName('netflix');
+    expect(matches, hasLength(1));
+    expect(matches.single.name, 'Netflix');
+
+    expect(await db.getSubscriptionsByName('Netflix'), hasLength(1));
+    expect(await db.getSubscriptionsByName('Yok'), isEmpty);
+  });
+
   test('deleteSubscription kaydı siler', () async {
     final db = AppDatabase.instance;
     final id = await db.insertSubscription(makeSub());

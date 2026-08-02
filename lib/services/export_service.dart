@@ -78,15 +78,254 @@ class ExportService {
   /// CSV'yi uygulama klasörüne yazar ve paylaşım menüsünü açar.
   static Future<void> exportCsvAndShare() async {
     final subscriptions = await AppDatabase.instance.getSubscriptions();
+    final payments = await AppDatabase.instance.getAllPayments();
+    final subNames = <int, String>{
+      for (final s in subscriptions)
+        if (s.id != null) s.id!: s.name,
+    };
     final csv = await buildCsv(subscriptions);
+    final paymentsCsv = await buildPaymentsCsv(payments, subNames);
 
     final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/abonelikler.csv');
-    await file.writeAsString(csv, flush: true);
+    final subFile = File('${dir.path}/abonelikler.csv');
+    await subFile.writeAsString(csv, flush: true);
+    final payFile = File('${dir.path}/odemeler.csv');
+    await payFile.writeAsString(paymentsCsv, flush: true);
 
     await Share.shareXFiles(
-      [XFile(file.path, mimeType: 'text/csv')],
-      subject: 'Abonelik Listesi (CSV)',
+      [
+        XFile(subFile.path, mimeType: 'text/csv'),
+        XFile(payFile.path, mimeType: 'text/csv'),
+      ],
+      subject: 'Abonelik Verileri (CSV)',
+    );
+  }
+
+  /// Ödeme geçmişini CSV'ye dönüştürür. Abonelik adı kimliği yerine
+  /// okunabilir olması için yazılır.
+  static Future<String> buildPaymentsCsv(
+    List<Payment> payments,
+    Map<int, String> subscriptionNames,
+  ) async {
+    final buffer = StringBuffer();
+    buffer.writeln('subscription_name,amount,currency,paid_at,note');
+    for (final p in payments) {
+      buffer.writeln([
+        subscriptionNames[p.subscriptionId] ?? '',
+        p.amount,
+        p.currency,
+        p.paidAt.toIso8601String(),
+        p.note ?? '',
+      ].map((e) => _escapeCsv(e.toString())).join(','));
+    }
+    return buffer.toString();
+  }
+
+  /// CSV satırını tırnak/kaçış kurallarını dikkate alarak parçalar.
+  static List<String> _parseCsvLine(String line) {
+    final result = <String>[];
+    final buffer = StringBuffer();
+    var inQuotes = false;
+    for (var i = 0; i < line.length; i++) {
+      final c = line[i];
+      if (inQuotes) {
+        if (c == '"') {
+          if (i + 1 < line.length && line[i + 1] == '"') {
+            buffer.write('"');
+            i++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          buffer.write(c);
+        }
+      } else if (c == '"') {
+        inQuotes = true;
+      } else if (c == ',') {
+        result.add(buffer.toString());
+        buffer.clear();
+      } else {
+        buffer.write(c);
+      }
+    }
+    result.add(buffer.toString());
+    return result;
+  }
+
+  static List<String> _nonEmptyLines(String csv) =>
+      csv.split('\n').where((l) => l.trim().isNotEmpty).toList();
+
+  /// Abonelik CSV satırlarını çözer. İlk satır başlık kabul edilir;
+  /// bilinmeyen sütunlar yoksayılır, türetilmiş alanlar atlanır.
+  static List<Subscription> _parseSubscriptionRows(List<String> lines) {
+    final header = _parseCsvLine(lines.first);
+    final idx = <String, int>{
+      for (var i = 0; i < header.length; i++) header[i].trim(): i,
+    };
+    int? at(String name) => idx[name];
+
+    final result = <Subscription>[];
+    for (final line in lines.skip(1)) {
+      final cells = _parseCsvLine(line);
+      String cell(String name, [String fallback = '']) {
+        final i = at(name);
+        if (i == null || i >= cells.length) return fallback;
+        return cells[i].trim();
+      }
+
+      final name = cell('name');
+      final price = double.tryParse(cell('price').replaceAll(',', '.'));
+      final currency = cell('currency');
+      if (name.isEmpty || price == null || price <= 0) continue;
+
+      final startDate = DateTime.tryParse(cell('start_date'));
+      if (startDate == null) continue;
+
+      final trialDate = DateTime.tryParse(cell('trial_end_date'));
+      result.add(Subscription(
+        name: name,
+        price: price,
+        currency: currency.isEmpty ? 'TRY' : currency,
+        billingCycle: cell('billing_cycle', 'monthly') == 'yearly'
+            ? 'yearly'
+            : 'monthly',
+        startDate: startDate,
+        status: cell('status', Subscription.active) == Subscription.cancelled
+            ? Subscription.cancelled
+            : Subscription.active,
+        category: cell('category', 'other'),
+        trialEndDate: trialDate,
+        reminderDays:
+            int.tryParse(cell('reminder_days', '3')) ?? Subscription.defaultReminderDays,
+      ));
+    }
+    return result;
+  }
+
+  /// Ödeme CSV satırlarını çözer.
+  static List<PaymentDraft> _parsePaymentRows(List<String> lines) {
+    final header = _parseCsvLine(lines.first);
+    final idx = <String, int>{
+      for (var i = 0; i < header.length; i++) header[i].trim(): i,
+    };
+    int? at(String name) => idx[name];
+
+    final result = <PaymentDraft>[];
+    for (final line in lines.skip(1)) {
+      final cells = _parseCsvLine(line);
+      String cell(String name, [String fallback = '']) {
+        final i = at(name);
+        if (i == null || i >= cells.length) return fallback;
+        return cells[i].trim();
+      }
+
+      final name = cell('subscription_name');
+      final amount = double.tryParse(cell('amount').replaceAll(',', '.'));
+      final paidAt = DateTime.tryParse(cell('paid_at'));
+      if (name.isEmpty || amount == null || amount <= 0 || paidAt == null) {
+        continue;
+      }
+      result.add(PaymentDraft(
+        subscriptionName: name,
+        amount: amount,
+        currency: cell('currency', 'TRY'),
+        paidAt: paidAt,
+        note: cell('note').isEmpty ? null : cell('note'),
+      ));
+    }
+    return result;
+  }
+
+  /// CSV içeriğini çözer. Başlığa bakarak abonelik veya ödeme dosyası
+  /// olduğunu anlar.
+  static ParsedCsvData parseCsv(String csv) {
+    final lines = _nonEmptyLines(csv);
+    if (lines.isEmpty) return const ParsedCsvData();
+    final header = _parseCsvLine(lines.first);
+    if (header.contains('paid_at')) {
+      return ParsedCsvData(payments: _parsePaymentRows(lines));
+    }
+    if (header.contains('price') && header.contains('billing_cycle')) {
+      return ParsedCsvData(subscriptions: _parseSubscriptionRows(lines));
+    }
+    return const ParsedCsvData();
+  }
+
+  /// Kullanıcının seçtiği CSV dosyasını okur ve çözer.
+  static Future<ParsedCsvData?> pickCsvFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['csv'],
+    );
+    final path = result?.files.single.path;
+    if (path == null) return null;
+    return parseCsv(await File(path).readAsString());
+  }
+
+  static bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  /// Çözümlenmiş CSV verisini veritabanına içe aktarır. Aynı ada ve
+  /// fatura döngüsüne sahip abonelikler tekrar eklenmez; adı eşleşmeyen
+  /// ödemeler atlanır.
+  static Future<CsvImportResult> importCsvData(ParsedCsvData data) async {
+    final db = AppDatabase.instance;
+    final existing = await db.getSubscriptions();
+    final existingPayments = await db.getAllPayments();
+    final paymentKeys = {
+      for (final p in existingPayments)
+        '${p.subscriptionId}|${p.amount.toStringAsFixed(2)}|'
+            '${p.paidAt.year}-${p.paidAt.month}-${p.paidAt.day}',
+    };
+
+    var addedSubs = 0, skippedSubs = 0, addedPayments = 0, skippedPayments = 0;
+    final idByName = <String, int>{
+      for (final s in existing) s.name.trim().toLowerCase(): s.id!,
+    };
+
+    for (final s in data.subscriptions) {
+      final key = s.name.trim().toLowerCase();
+      final exists = existing.any((e) =>
+          e.name.trim().toLowerCase() == key &&
+          e.billingCycle == s.billingCycle &&
+          _sameDay(e.startDate, s.startDate));
+      if (exists) {
+        skippedSubs++;
+        continue;
+      }
+      final newId = await db.insertSubscription(s);
+      idByName[key] = newId;
+      addedSubs++;
+    }
+
+    for (final p in data.payments) {
+      final id = idByName[p.subscriptionName.trim().toLowerCase()];
+      if (id == null) {
+        skippedPayments++;
+        continue;
+      }
+      final key = '${id}|${p.amount.toStringAsFixed(2)}|'
+          '${p.paidAt.year}-${p.paidAt.month}-${p.paidAt.day}';
+      if (paymentKeys.contains(key)) {
+        skippedPayments++;
+        continue;
+      }
+      await db.insertPayment(Payment(
+        subscriptionId: id,
+        amount: p.amount,
+        currency: p.currency,
+        paidAt: p.paidAt,
+        note: p.note,
+      ));
+      paymentKeys.add(key);
+      addedPayments++;
+    }
+
+    return CsvImportResult(
+      addedSubscriptions: addedSubs,
+      skippedSubscriptions: skippedSubs,
+      addedPayments: addedPayments,
+      skippedPayments: skippedPayments,
     );
   }
 
@@ -232,4 +471,46 @@ class BackupData {
   final List<Payment> payments;
 
   const BackupData({required this.subscriptions, required this.payments});
+}
+
+/// Çözümlenmiş CSV verisi (abonelik ve/veya ödeme satırları).
+class ParsedCsvData {
+  final List<Subscription> subscriptions;
+  final List<PaymentDraft> payments;
+
+  const ParsedCsvData({this.subscriptions = const [], this.payments = const []});
+
+  bool get isEmpty => subscriptions.isEmpty && payments.isEmpty;
+}
+
+/// CSV'den okunan, henüz kaydedilmemiş ödeme adayı.
+class PaymentDraft {
+  final String subscriptionName;
+  final double amount;
+  final String currency;
+  final DateTime paidAt;
+  final String? note;
+
+  const PaymentDraft({
+    required this.subscriptionName,
+    required this.amount,
+    required this.currency,
+    required this.paidAt,
+    this.note,
+  });
+}
+
+/// CSV içe aktarma sonucu özeti.
+class CsvImportResult {
+  final int addedSubscriptions;
+  final int skippedSubscriptions;
+  final int addedPayments;
+  final int skippedPayments;
+
+  const CsvImportResult({
+    required this.addedSubscriptions,
+    required this.skippedSubscriptions,
+    required this.addedPayments,
+    required this.skippedPayments,
+  });
 }

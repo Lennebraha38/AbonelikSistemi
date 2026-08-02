@@ -164,4 +164,106 @@ void main() {
     expect(ics, contains('UID:sub-'));
     expect(ics.contains('İptal yenileme'), isFalse);
   });
+
+  test('buildPaymentsCsv başlık ve satır üretir', () async {
+    final csv = await ExportService.buildPaymentsCsv(
+      [
+        Payment(
+          subscriptionId: 1,
+          amount: 50.5,
+          currency: 'TRY',
+          paidAt: DateTime(2026, 7, 20),
+          note: 'Aylık, ödeme',
+        ),
+      ],
+      {1: 'Netflix'},
+    );
+
+    expect(csv, startsWith('subscription_name,amount,currency,paid_at,note'));
+    expect(csv, contains('Netflix,50.5,TRY'));
+    expect(csv, contains('"Aylık, ödeme"'));
+  });
+
+  test('parseCsv abonelik CSV satırlarını çözer', () {
+    final csv = 'id,name,price,currency,billing_cycle,start_date,status,'
+        'category,trial_end_date,reminder_days,next_renewal_date,'
+        'days_until_renewal,monthly_equivalent\n'
+        '1,Netflix,100,TRY,monthly,2026-01-15,active,video,,3,'
+        '2026-08-15,0,100\n'
+        '2,İptal,50,USD,yearly,2025-01-01,cancelled,other,2025-02-01,7,'
+        '2026-01-01,0,4.17\n';
+
+    final data = ExportService.parseCsv(csv);
+
+    expect(data.isEmpty, isFalse);
+    expect(data.subscriptions, hasLength(2));
+    expect(data.subscriptions.first.name, 'Netflix');
+    expect(data.subscriptions.first.currency, 'TRY');
+    expect(data.subscriptions.first.billingCycle, 'monthly');
+    expect(data.subscriptions.last.status, Subscription.cancelled);
+    expect(data.subscriptions.last.trialEndDate, DateTime(2025, 2, 1));
+    expect(data.subscriptions.last.reminderDays, 7);
+    expect(data.payments, isEmpty);
+  });
+
+  test('parseCsv ödeme CSV satırlarını çözer', () {
+    final csv = 'subscription_name,amount,currency,paid_at,note\n'
+        'Netflix,100,TRY,2026-07-20T10:00:00.000,"Aylık, ödeme"\n';
+
+    final data = ExportService.parseCsv(csv);
+
+    expect(data.subscriptions, isEmpty);
+    expect(data.payments, hasLength(1));
+    expect(data.payments.single.subscriptionName, 'Netflix');
+    expect(data.payments.single.amount, closeTo(100, 0.001));
+    expect(data.payments.single.paidAt, DateTime(2026, 7, 20, 10));
+    expect(data.payments.single.note, 'Aylık, ödeme');
+  });
+
+  test('parseCsv bilinmeyen başlıkta boş veri döner', () {
+    expect(ExportService.parseCsv('foo,bar\n1,2').isEmpty, isTrue);
+    expect(ExportService.parseCsv('').isEmpty, isTrue);
+  });
+
+  test('importCsvData yeni veriyi ekler, tekrarları atlar', () async {
+    final db = AppDatabase.instance;
+    final existingId = await db.insertSubscription(makeSub(name: 'Netflix'));
+    await db.insertPayment(
+      Payment(
+        subscriptionId: existingId,
+        amount: 100,
+        currency: 'TRY',
+        paidAt: DateTime(2026, 7, 20),
+      ),
+    );
+
+    final subsData = ExportService.parseCsv(
+      'id,name,price,currency,billing_cycle,start_date,status,category,'
+      'trial_end_date,reminder_days\n'
+      '1,Netflix,100,TRY,monthly,2026-01-15,active,video,,3\n'
+      '2,Spotify,50,TRY,monthly,2026-03-10,active,music,,3\n',
+    );
+    final payData = ExportService.parseCsv(
+      'subscription_name,amount,currency,paid_at,note\n'
+      'Netflix,100,TRY,2026-07-20T10:00:00.000,\n'
+      'Spotify,50,TRY,2026-04-10T10:00:00.000,\n'
+      'Bilinmeyen,30,TRY,2026-05-01T10:00:00.000,\n',
+    );
+    final combined = ParsedCsvData(
+      subscriptions: subsData.subscriptions,
+      payments: payData.payments,
+    );
+
+    final result = await ExportService.importCsvData(combined);
+
+    expect(result.addedSubscriptions, 1);
+    expect(result.skippedSubscriptions, 1);
+    expect(result.addedPayments, 1);
+    expect(result.skippedPayments, 2);
+
+    final subs = await db.getSubscriptions();
+    expect(subs, hasLength(2));
+    expect(subs.map((s) => s.name), containsAll(['Netflix', 'Spotify']));
+    expect(await db.getAllPayments(), hasLength(2));
+  });
 }

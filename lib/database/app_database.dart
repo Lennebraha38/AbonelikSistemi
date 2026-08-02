@@ -130,6 +130,22 @@ class AppDatabase {
     return subscriptions.where((s) => !s.isCancelled).toList();
   }
 
+  /// Belirtilen kimliğe sahip aboneliği getirir (yoksa null).
+  Future<Subscription?> getSubscriptionById(int id) async {
+    final matches = (await getSubscriptions()).where((s) => s.id == id).toList();
+    return matches.isEmpty ? null : matches.first;
+  }
+
+  /// Adı (harf duyarlılığı olmadan) verilen isimle birebir aynı olan
+  /// abonelikler. Kopya kayıt uyarısı için kullanılır.
+  Future<List<Subscription>> getSubscriptionsByName(String name) async {
+    final query = name.trim().toLowerCase();
+    final subscriptions = await getSubscriptions();
+    return subscriptions
+        .where((s) => s.name.trim().toLowerCase() == query)
+        .toList();
+  }
+
   /// Yenilenmesine [withinDays] gün veya daha az kalmış **aktif**
   /// abonelikler, yenileme tarihine göre sıralı.
   Future<List<Subscription>> getUpcomingRenewals(int withinDays) async {

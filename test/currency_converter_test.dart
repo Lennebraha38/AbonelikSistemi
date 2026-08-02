@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:subscription_manager/models/subscription.dart';
 
 void main() {
@@ -36,6 +37,36 @@ void main() {
         CurrencyConverter.convert(100, 'XYZ', 'TRY'),
         closeTo(100 / 0.029, 0.01),
       );
+    });
+  });
+
+  group('CurrencyConverter kullanıcı kurları', () {
+    test('kayıt yokken varsayılan kurlar yüklenir', () async {
+      SharedPreferences.setMockInitialValues({});
+      await CurrencyConverter.load();
+      expect(CurrencyConverter.usdToTryRate, closeTo(1 / 0.029, 0.0001));
+      expect(CurrencyConverter.usdToEurRate, closeTo(1 / 1.09, 0.0001));
+    });
+
+    test('saveRates kurları kaydedip çevirimi etkiler', () async {
+      SharedPreferences.setMockInitialValues({});
+      await CurrencyConverter.load();
+      await CurrencyConverter.saveRates(usdToTry: 40, usdToEur: 1.2);
+
+      expect(CurrencyConverter.convert(40, 'TRY', 'USD'), closeTo(1, 0.0001));
+      expect(CurrencyConverter.convert(100, 'TRY', 'USD'), closeTo(2.5, 0.0001));
+      expect(CurrencyConverter.convert(120, 'EUR', 'USD'), closeTo(100, 0.0001));
+
+      // Kalıcı: yeniden yüklendiğinde de korunur.
+      await CurrencyConverter.load();
+      expect(CurrencyConverter.usdToTryRate, closeTo(40, 0.0001));
+      expect(CurrencyConverter.usdToEurRate, closeTo(1.2, 0.0001));
+    });
+
+    test('geçersiz kayıtlı kur yoksayılır, varsayılan kullanılır', () async {
+      SharedPreferences.setMockInitialValues({'fx_usd_try': 0});
+      await CurrencyConverter.load();
+      expect(CurrencyConverter.usdToTryRate, closeTo(1 / 0.029, 0.0001));
     });
   });
 }

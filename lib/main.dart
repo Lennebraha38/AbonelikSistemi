@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'app_navigation.dart';
+import 'models/subscription.dart';
 import 'screens/dashboard_screen.dart';
 import 'services/notification_service.dart';
 import 'theme/theme_controller.dart';
@@ -20,8 +22,9 @@ Future<void> main() async {
     await NotificationService.configureAndStartBackgroundService();
   }
 
-  // Kaydedilmiş tema tercihini yükle (açık/koyu/sistem).
+  // Kaydedilmiş tema ve döviz kuru tercihlerini yükle.
   await ThemeController.instance.load();
+  await CurrencyConverter.load();
 
   runApp(const SubscriptionManagerApp());
 }
@@ -37,6 +40,7 @@ class SubscriptionManagerApp extends StatelessWidget {
         return MaterialApp(
           title: 'Abonelik Yöneticisi',
           debugShowCheckedModeBanner: false,
+          navigatorKey: appNavigatorKey,
           theme: ThemeData(
             colorSchemeSeed: const Color(0xFF3949AB),
             brightness: Brightness.light,

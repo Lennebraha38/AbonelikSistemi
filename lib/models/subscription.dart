@@ -1,3 +1,5 @@
+import 'package:shared_preferences/shared_preferences.dart';
+
 /// Abonelik modeli: her bir aylık/yıllık aboneliği temsil eder.
 ///
 /// Sadece ilk ödeme tarihi (`startDate`) ve fatura döngüsü bilgisi saklanır;
@@ -122,8 +124,9 @@ class Subscription {
       );
 }
 
-/// Uygulama tamamen çevrimdışı çalıştığı için döviz çevrimi sabit
-/// (statik) bir tablo ile yapılır. İsterseniz bu oranları güncelleyebilirsiniz.
+/// Uygulama tamamen çevrimdışı çalıştığı için döviz çevrimi dahili bir
+/// tabloyla yapılır. Kullanıcı Ayarlar > Döviz Kurları bölümünden
+/// (1 USD = ? TRY / EUR) oranları elle güncelleyebilir; burada saklanır.
 class CurrencyConverter {
   static const List<String> supportedCurrencies = ['TRY', 'USD', 'EUR'];
 
@@ -133,11 +136,54 @@ class CurrencyConverter {
     'EUR': '€',
   };
 
-  static const Map<String, double> _toUsd = {
+  /// Varsayılan oranlar: 1 birim döviz = kaç USD.
+  /// TRY 0.029 -> 1 USD ≈ 34.48 TRY; EUR 1.09 -> 1 EUR = 1.09 USD.
+  static const Map<String, double> _defaultToUsd = {
     'TRY': 0.029,
     'USD': 1.0,
     'EUR': 1.09,
   };
+
+  static const String _prefUsdToTry = 'fx_usd_try';
+  static const String _prefUsdToEur = 'fx_usd_eur';
+
+  static Map<String, double> _toUsd = Map.of(_defaultToUsd);
+
+  /// SharedPreferences'tan kaydedilmiş kullanıcı kurunu okur.
+  /// Kayıt yoksa varsayılan oranlar kullanılır.
+  static Future<void> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final usdToTry = _safeDouble(prefs, _prefUsdToTry);
+    final usdToEur = _safeDouble(prefs, _prefUsdToEur);
+    _toUsd = Map.of(_defaultToUsd);
+    if (usdToTry != null && usdToTry > 0) _toUsd['TRY'] = 1 / usdToTry;
+    if (usdToEur != null && usdToEur > 0) _toUsd['EUR'] = 1 / usdToEur;
+  }
+
+  /// Bozuk/uyumsuz bir değer saklanmışsa çevrimi çökertmeden yoksay.
+  static double? _safeDouble(SharedPreferences prefs, String key) {
+    try {
+      final value = prefs.getDouble(key);
+      return (value == null || !value.isFinite) ? null : value;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Kullanıcının girdiği kurları kaydeder:
+  /// [usdToTry] -> 1 USD kaç TRY; [usdToEur] -> 1 USD kaç EUR.
+  static Future<void> saveRates({
+    required double usdToTry,
+    required double usdToEur,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_prefUsdToTry, usdToTry);
+    await prefs.setDouble(_prefUsdToEur, usdToEur);
+    await load();
+  }
+
+  static double get usdToTryRate => 1 / _toUsd['TRY']!;
+  static double get usdToEurRate => 1 / _toUsd['EUR']!;
 
   static double convert(double amount, String from, String to) {
     if (from == to) return amount;
