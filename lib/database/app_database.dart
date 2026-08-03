@@ -3,6 +3,7 @@ import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../models/payment.dart';
+import '../models/price_history.dart';
 import '../models/subscription.dart';
 
 /// Yerel SQLite veritabanı katmanı.
@@ -14,7 +15,7 @@ class AppDatabase {
 
   /// Şema sürümü. Değişiklik yapıldığında bir üst sayıya çekilir ve
   /// [onUpgrade] içine eski sürümden gelen migration'lar eklenir.
-  static const int schemaVersion = 4;
+  static const int schemaVersion = 5;
 
   /// Testlerde normal dosya yolunu geçersiz kılar (örn. `:memory:`).
   @visibleForTesting
@@ -65,6 +66,15 @@ class AppDatabase {
             note TEXT
           )
         ''');
+        await db.execute('''
+          CREATE TABLE price_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            subscription_id INTEGER NOT NULL,
+            price REAL NOT NULL,
+            currency TEXT NOT NULL,
+            changed_at TEXT NOT NULL
+          )
+        ''');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -95,6 +105,17 @@ class AppDatabase {
             )
           ''');
         }
+        if (oldVersion < 5) {
+          await db.execute('''
+            CREATE TABLE price_history (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subscription_id INTEGER NOT NULL,
+              price REAL NOT NULL,
+              currency TEXT NOT NULL,
+              changed_at TEXT NOT NULL
+            )
+          ''');
+        }
       },
     );
   }
@@ -103,7 +124,7 @@ class AppDatabase {
 
   Future<int> insertSubscription(Subscription subscription) async {
     final db = await database;
-    return db.insert('subscriptions', {
+    final id = await db.insert('subscriptions', {
       'name': subscription.name,
       'price': subscription.price,
       'currency': subscription.currency,
@@ -114,6 +135,16 @@ class AppDatabase {
       'trial_end_date': subscription.trialEndDate?.toIso8601String(),
       'reminder_days': subscription.reminderDays,
     });
+    if (id != 0) {
+      // İlk fiyat kaydını at; geçmiş grafiği bunun üzerine kurulur.
+      await insertPriceHistory(PriceHistory(
+        subscriptionId: id,
+        price: subscription.price,
+        currency: subscription.currency,
+        changedAt: DateTime.now(),
+      ));
+    }
+    return id;
   }
 
   // ---------- READ ----------
@@ -181,12 +212,26 @@ class AppDatabase {
 
   Future<int> updateSubscription(Subscription subscription) async {
     final db = await database;
-    return db.update(
+    final old = await getSubscriptionById(subscription.id!);
+    final result = await db.update(
       'subscriptions',
       subscription.toMap()..remove('id'),
       where: 'id = ?',
       whereArgs: [subscription.id],
     );
+    // Fiyat ya da para birimi değiştiyse fiyat geçmişine yeni kayıt ekle.
+    final priceOrCurrencyChanged = old != null &&
+        (old.price != subscription.price ||
+            old.currency != subscription.currency);
+    if (priceOrCurrencyChanged) {
+      await insertPriceHistory(PriceHistory(
+        subscriptionId: subscription.id!,
+        price: subscription.price,
+        currency: subscription.currency,
+        changedAt: DateTime.now(),
+      ));
+    }
+    return result;
   }
 
   /// Aynı gün birden fazla bildirim gönderilmemesi için kullanılır.
@@ -227,6 +272,8 @@ class AppDatabase {
   Future<int> deleteSubscription(int id) async {
     final db = await database;
     await db.delete('payments', where: 'subscription_id = ?', whereArgs: [id]);
+    await db.delete('price_history',
+        where: 'subscription_id = ?', whereArgs: [id]);
     return db.delete('subscriptions', where: 'id = ?', whereArgs: [id]);
   }
 
@@ -234,6 +281,7 @@ class AppDatabase {
   Future<void> deleteAllData() async {
     final db = await database;
     await db.delete('payments');
+    await db.delete('price_history');
     await db.delete('subscriptions');
   }
 
@@ -272,5 +320,26 @@ class AppDatabase {
   Future<int> deletePayment(int id) async {
     final db = await database;
     return db.delete('payments', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // ---------- FİYAT GEÇMİŞİ (price history) ----------
+
+  Future<int> insertPriceHistory(PriceHistory history) async {
+    final db = await database;
+    return db.insert('price_history', history.toMap()..remove('id'));
+  }
+
+  /// Bir aboneliğin fiyat geçmişi, en eskisi üstte olacak şekilde.
+  Future<List<PriceHistory>> getPriceHistoryForSubscription(
+    int subscriptionId,
+  ) async {
+    final db = await database;
+    final rows = await db.query(
+      'price_history',
+      where: 'subscription_id = ?',
+      whereArgs: [subscriptionId],
+      orderBy: 'changed_at ASC, id ASC',
+    );
+    return rows.map(PriceHistory.fromMap).toList();
   }
 }

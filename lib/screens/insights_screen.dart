@@ -25,6 +25,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
   String _displayCurrency = 'TRY';
   double _monthlyTotal = 0;
   double _yearlyTotal = 0;
+  double _monthlyBudget = 0;
   List<Subscription> _active = const [];
   List<Payment> _payments = const [];
   bool _loading = true;
@@ -49,6 +50,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
       _active = active;
       _monthlyTotal = monthly;
       _yearlyTotal = monthly * 12;
+      _monthlyBudget = prefs.getDouble('monthly_budget') ?? 0;
       _payments = payments;
       _loading = false;
     });
@@ -189,8 +191,60 @@ class _InsightsScreenState extends State<InsightsScreen> {
             '${_active.length} aktif abonelik',
             style: const TextStyle(color: Colors.white70, fontSize: 13),
           ),
+          if (_monthlyBudget > 0) ...[
+            const SizedBox(height: 16),
+            _buildBudgetProgress(),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _buildBudgetProgress() {
+    final symbol = CurrencyConverter.symbols[_displayCurrency] ?? '';
+    final ratio = _monthlyTotal / _monthlyBudget;
+    final clamped = ratio.clamp(0.0, 1.0);
+    final Color color;
+    if (ratio > 1) {
+      color = Colors.redAccent;
+    } else if (ratio > 0.8) {
+      color = Colors.amberAccent;
+    } else {
+      color = Colors.lightGreenAccent;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Aylık bütçe',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            Text(
+              '$symbol${_amountFormat.format(_monthlyTotal)} / '
+              '$symbol${_amountFormat.format(_monthlyBudget)} $_displayCurrency',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: LinearProgressIndicator(
+            value: clamped,
+            minHeight: 8,
+            backgroundColor: Colors.white24,
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+          ),
+        ),
+      ],
     );
   }
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -7,8 +9,10 @@ import '../database/app_database.dart';
 import '../models/categories.dart';
 import '../models/subscription.dart';
 import '../services/notification_service.dart';
+import '../services/widget_service.dart';
 import '../widgets/empty_state.dart';
 import 'add_subscription_screen.dart';
+import 'calendar_screen.dart';
 import 'insights_screen.dart';
 import 'settings_screen.dart';
 import 'subscription_detail_screen.dart';
@@ -58,7 +62,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         content: const Text(
           'Tüm aboneliklerinizi tek yerden takip edin:\n'
           '• Yenileme ve deneme süresi hatırlatmaları\n'
-          '• Aylık bütçe uyarısı\n'
+          '• Aylık bütçe ilerlemesi ve aşım uyarısı\n'
+          '• Fiyat geçmişi ve artış grafiği\n'
+          '• Yenileme takvimi ve ana ekran widget\'ı\n'
           '• Ödeme geçmişi ve gerçek harcama analizi\n'
           '• JSON yedekleme, CSV ve takvim aktarımı\n\n'
           'Uygulama tamamen çevrimdışı çalışır; verileriniz '
@@ -108,6 +114,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _notificationsDisabled = notificationsDisabled;
       _loading = false;
     });
+
+    // Ana ekran widget'ını yaklaşan yenilemelerle tazele (kritik değil).
+    unawaited(WidgetService.updateUpcoming());
   }
 
   List<Subscription> get _filtered {
@@ -151,6 +160,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _openInsights() async {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const InsightsScreen()),
+    );
+    _loadData();
+  }
+
+  Future<void> _openCalendar() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const CalendarScreen()),
     );
     _loadData();
   }
@@ -225,6 +241,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       appBar: AppBar(
         title: const Text('Abonelik Yöneticisi'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.calendar_month_outlined),
+            tooltip: 'Takvim',
+            onPressed: _openCalendar,
+          ),
           IconButton(
             icon: const Icon(Icons.bar_chart_outlined),
             tooltip: 'İstatistikler',
@@ -422,6 +443,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ),
           ),
+          if (_monthlyBudget > 0) ...[
+            const SizedBox(height: 16),
+            _buildBudgetProgress(),
+          ],
           if (_totalsByCurrency.length > 1) ...[
             const SizedBox(height: 12),
             Wrap(
@@ -441,6 +466,54 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildBudgetProgress() {
+    final symbol = CurrencyConverter.symbols[_displayCurrency] ?? '';
+    final ratio = _monthlyTotal / _monthlyBudget;
+    final clamped = ratio.clamp(0.0, 1.0);
+    final Color color;
+    if (ratio > 1) {
+      color = Colors.redAccent;
+    } else if (ratio > 0.8) {
+      color = Colors.amberAccent;
+    } else {
+      color = Colors.lightGreenAccent;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Aylık bütçe',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            Text(
+              '$symbol${_amountFormat.format(_monthlyTotal)} / '
+              '$symbol${_amountFormat.format(_monthlyBudget)} $_displayCurrency',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: LinearProgressIndicator(
+            value: clamped,
+            minHeight: 8,
+            backgroundColor: Colors.white24,
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+          ),
+        ),
+      ],
     );
   }
 

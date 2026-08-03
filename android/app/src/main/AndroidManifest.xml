@@ -39,5 +39,17 @@
         <service
             android:name="id.flutter.flutter_background_service.BackgroundService"
             android:foregroundServiceType="dataSync" />
+
+        <!-- Ana ekran widget'ı (home_widget) kaydı -->
+        <receiver
+            android:name=".SubscriptionWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/subscription_widget_info" />
+        </receiver>
     </application>
 </manifest>

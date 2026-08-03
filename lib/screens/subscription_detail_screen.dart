@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -5,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../database/app_database.dart';
 import '../models/categories.dart';
 import '../models/payment.dart';
+import '../models/price_history.dart';
 import '../models/subscription.dart';
 import 'add_subscription_screen.dart';
 
@@ -25,6 +28,7 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
 
   Subscription? _subscription;
   List<Payment> _payments = const [];
+  List<PriceHistory> _priceHistory = const [];
   bool _loading = true;
 
   @override
@@ -43,11 +47,16 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
         ? <Payment>[]
         : await AppDatabase.instance
             .getPaymentsForSubscription(sub.id!);
+    final history = sub.id == null
+        ? <PriceHistory>[]
+        : await AppDatabase.instance
+            .getPriceHistoryForSubscription(sub.id!);
 
     if (!mounted) return;
     setState(() {
       _subscription = sub;
       _payments = payments;
+      _priceHistory = history;
       _loading = false;
     });
   }
@@ -285,6 +294,8 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
                   const SizedBox(height: 20),
                   _buildActions(s),
                   const SizedBox(height: 24),
+                  _buildPriceHistory(s),
+                  const SizedBox(height: 24),
                   _buildPayments(s),
                   const SizedBox(height: 32),
                 ],
@@ -454,6 +465,89 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
     );
   }
 
+  Widget _buildPriceHistory(Subscription s) {
+    final history = _priceHistory;
+    if (history.length < 2) return const SizedBox.shrink();
+    final colorScheme = Theme.of(context).colorScheme;
+    final symbol = CurrencyConverter.symbols[s.currency] ?? '';
+    final values = history.map((h) => h.price).toList();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Fiyat Geçmişi',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 90,
+              width: double.infinity,
+              child: CustomPaint(
+                painter: _PriceChartPainter(
+                  values: values,
+                  lineColor: colorScheme.primary,
+                  dotColor: colorScheme.tertiary,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            for (var i = history.length - 1; i >= 0; i--)
+              _priceHistoryRow(history, i, symbol),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _priceHistoryRow(List<PriceHistory> history, int index, String symbol) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final entry = history[index];
+    final previous = index > 0 ? history[index - 1] : null;
+    final IconData? icon;
+    final Color? indicator;
+    if (previous != null && previous.price != entry.price) {
+      if (entry.price > previous.price) {
+        indicator = colorScheme.error;
+        icon = Icons.arrow_upward;
+      } else {
+        indicator = Colors.green.shade700;
+        icon = Icons.arrow_downward;
+      }
+    } else {
+      indicator = null;
+      icon = null;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: indicator),
+            const SizedBox(width: 6),
+          ],
+          Text(
+            DateFormat('dd.MM.yyyy').format(entry.changedAt),
+            style: const TextStyle(fontSize: 13),
+          ),
+          const Spacer(),
+          Text(
+            '$symbol${entry.price.toStringAsFixed(2)} ${entry.currency}',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: indicator,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPayments(Subscription s) {
     final symbol = CurrencyConverter.symbols[s.currency] ?? '';
 
@@ -540,4 +634,58 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
       ),
     );
   }
+}
+
+/// Fiyat geçmişini basit bir çizgi grafik olarak çizen painter.
+class _PriceChartPainter extends CustomPainter {
+  final List<double> values;
+  final Color lineColor;
+  final Color dotColor;
+
+  _PriceChartPainter({
+    required this.values,
+    required this.lineColor,
+    required this.dotColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (values.length < 2 || size.isEmpty) return;
+
+    final minValue = values.reduce(math.min);
+    final maxValue = values.reduce(math.max);
+    final range = (maxValue - minValue) == 0 ? 1.0 : maxValue - minValue;
+    final padding = 4.0;
+    final width = size.width - padding * 2;
+    final height = size.height - padding * 2;
+
+    Offset pointAt(int i) {
+      final x = padding + (i / (values.length - 1)) * width;
+      final y = padding + height - (values[i] - minValue) / range * height;
+      return Offset(x, y);
+    }
+
+    final linePaint = Paint()
+      ..color = lineColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final path = Path()..moveTo(pointAt(0).dx, pointAt(0).dy);
+    for (var i = 1; i < values.length; i++) {
+      final p = pointAt(i);
+      path.lineTo(p.dx, p.dy);
+    }
+    canvas.drawPath(path, linePaint);
+
+    final dotPaint = Paint()..color = dotColor;
+    for (var i = 0; i < values.length; i++) {
+      canvas.drawCircle(pointAt(i), 3.5, dotPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_PriceChartPainter oldDelegate) =>
+      oldDelegate.values != values;
 }

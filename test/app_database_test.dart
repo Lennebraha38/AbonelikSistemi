@@ -236,4 +236,46 @@ void main() {
     await db.deleteSubscription(id);
     expect(await db.getAllPayments(), isEmpty);
   });
+
+  test('insertSubscription ilk fiyat geçmişi kaydını atar', () async {
+    final db = AppDatabase.instance;
+    final id = await db.insertSubscription(makeSub(price: 99.9));
+
+    final history = await db.getPriceHistoryForSubscription(id);
+    expect(history, hasLength(1));
+    expect(history.first.price, closeTo(99.9, 0.001));
+    expect(history.first.subscriptionId, id);
+  });
+
+  test('updateSubscription fiyat değişince geçmişe kayıt ekler', () async {
+    final db = AppDatabase.instance;
+    final id = await db.insertSubscription(makeSub(price: 100));
+
+    // Fiyat değişti -> yeni kayıt
+    await db.updateSubscription(makeSub(id: id, price: 120));
+    // Para birimi değişti -> yeni kayıt
+    await db.updateSubscription(
+      makeSub(id: id, price: 120, currency: 'USD'),
+    );
+    // Sadece ad değişti -> kayıt eklenmemeli
+    await db.updateSubscription(
+      makeSub(id: id, price: 120, currency: 'USD', name: 'Yeni Ad'),
+    );
+
+    final history = await db.getPriceHistoryForSubscription(id);
+    expect(history, hasLength(3));
+    expect(history.map((h) => h.price).toList(), [100, 120, 120]);
+    expect(history.last.currency, 'USD');
+    expect(history.first.currency, 'TRY');
+  });
+
+  test('deleteSubscription fiyat geçmişini de siler', () async {
+    final db = AppDatabase.instance;
+    final id = await db.insertSubscription(makeSub());
+    await db.updateSubscription(makeSub(id: id, price: 150));
+
+    expect(await db.getPriceHistoryForSubscription(id), hasLength(2));
+    await db.deleteSubscription(id);
+    expect(await db.getPriceHistoryForSubscription(id), isEmpty);
+  });
 }

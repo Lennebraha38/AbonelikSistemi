@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,6 +8,7 @@ import '../app_info.dart';
 import '../models/subscription.dart';
 import '../services/export_service.dart';
 import '../services/notification_service.dart';
+import '../services/widget_service.dart';
 import '../theme/theme_controller.dart';
 
 /// Ayarlar: tema, para birimi, bütçe, bildirimler ve veri yönetimi.
@@ -140,6 +143,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _exporting = true);
     try {
       await ExportService.restoreBackupData(data, replace: choice == 'replace');
+      unawaited(WidgetService.updateUpcoming());
       HapticFeedback.mediumImpact();
       messenger.showSnackBar(
         const SnackBar(content: Text('Yedek başarıyla geri yüklendi.')),
@@ -306,6 +310,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _exporting = true);
     try {
       final result = await ExportService.importCsvData(data);
+      unawaited(WidgetService.updateUpcoming());
       HapticFeedback.mediumImpact();
       messenger.showSnackBar(
         SnackBar(
@@ -337,11 +342,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const Text(
           'Özellikler:\n'
           '• Yenileme ve deneme hatırlatmaları\n'
-          '• Aylık bütçe uyarısı\n'
-          '• Ödeme geçmişi takibi\n'
-          '• Kategori bazlı istatistikler\n'
-          '• JSON yedekleme ve geri yükleme\n'
-          '• CSV içe/dışa aktarma ve takvim (.ics) aktarımı',
+          '• Aylık bütçe uyarısı ve ilerleme çubuğu\n'
+          '• Fiyat geçmişi ve artış grafiği\n'
+          '• Yenileme takvimi ve ana ekran widget\'ı\n'
+          '• Ödeme geçmişi ve gerçek harcama analizi\n'
+          '• JSON yedekleme, CSV ve takvim (.ics) aktarımı',
         ),
       ],
     );
